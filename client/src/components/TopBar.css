@@ -1,0 +1,81 @@
+/* ── TopBar ──────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  background: #171717;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.topbar-logo {
+  padding: 0 20px;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.topbar-logo-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(110, 231, 183, 0.1);
+  border: 1px solid rgba(110, 231, 183, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #6EE7B7;
+}
+
+.topbar-logo-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f5f5;
+  letter-spacing: -0.01em;
+}
+
+.topbar-nav {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.topbar-tab {
+  position: relative;
+  padding: 0 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #555555;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.topbar-tab:hover {
+  color: #888888;
+}
+
+.topbar-tab.active {
+  color: #f5f5f5;
+}
+
+.topbar-tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: #6EE7B7;
+  border-radius: 2px 2px 0 0;
+}

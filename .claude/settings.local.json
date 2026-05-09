@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite *)",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Path . -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(Get-ChildItem -Path C:\\\\Users\\\\yinma\\\\StudyMate -Force)",
+      "Bash(Select-Object Name, PSIsContainer)"
+    ]
+  }
+}
