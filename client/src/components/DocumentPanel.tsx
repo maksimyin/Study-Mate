@@ -7,16 +7,8 @@ interface Props {
   activeTopics: string[]
   onToggleTopic: (t: string) => void
   docs: Document[]
-  onSimulateUpload: (name: string) => void
+  onUpload: (file: File) => void
 }
-
-const DEMO_FILES = [
-  'chapter-5-thermodynamics.pdf',
-  'ap-physics-waves-optics.pdf',
-  'civil-rights-movement-timeline.pdf',
-  'calc-series-and-sequences.pdf',
-  'bio-genetics-mendel-laws.pdf',
-]
 
 function ExtBadge({ name }: { name: string }) {
   const ext = (name.split('.').pop() ?? 'file').toLowerCase()
@@ -30,12 +22,12 @@ function ProcessingBar() {
   return <div className="processing-bar shimmer-track" />
 }
 
-export default function DocumentPanel({ topics, activeTopics, onToggleTopic, docs, onSimulateUpload }: Props) {
+export default function DocumentPanel({ topics, activeTopics, onToggleTopic, docs, onUpload }: Props) {
   const [isDragOver,    setIsDragOver]    = useState(false)
   const [justCompleted, setJustCompleted] = useState<Set<string>>(new Set())
   const [newIds,        setNewIds]        = useState<Set<string>>(new Set())
-  const prevRef    = useRef<Document[]>(docs)
-  const demoIdxRef = useRef(0)
+  const prevRef     = useRef<Document[]>(docs)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const prev    = prevRef.current
@@ -56,23 +48,31 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
     prevRef.current = docs
   }, [docs])
 
-  const triggerUpload = () => {
-    const name = DEMO_FILES[demoIdxRef.current % DEMO_FILES.length]
-    demoIdxRef.current++
-    onSimulateUpload(name)
-  }
-
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
     const f = e.dataTransfer.files[0]
-    onSimulateUpload(f ? f.name : DEMO_FILES[demoIdxRef.current++ % DEMO_FILES.length])
+    if (f) onUpload(f)
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) onUpload(f)
+    e.target.value = ''
   }
 
   const readyCount = docs.filter(d => d.status === 'ready').length
-
   return (
     <aside className="doc-panel">
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.md,.txt"
+        className="hidden"
+        onChange={handleFileChange}
+      />
 
       {/* Header */}
       <div className="doc-panel-header">
@@ -97,7 +97,7 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
 
       {/* Upload zone */}
       <div
-        onClick={triggerUpload}
+        onClick={() => fileInputRef.current?.click()}
         onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}

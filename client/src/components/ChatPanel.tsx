@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './ChatPanel.css'
 import type { Message } from '../types'
 
@@ -7,6 +9,8 @@ interface Props {
   scopeTopics: string[]
   onToggleScope: (t: string) => void
   messages: Message[]
+  isSending: boolean
+  onSend: (content: string) => void
 }
 
 function StreamingIndicator() {
@@ -26,15 +30,41 @@ function StreamingIndicator() {
   )
 }
 
-export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages }: Props) {
-  const [input, setInput] = useState('')
-  const taRef = useRef<HTMLTextAreaElement>(null)
+export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages, isSending, onSend }: Props) {
+  const [input, setInput]   = useState('')
+  const taRef               = useRef<HTMLTextAreaElement>(null)
+  const scrollRef           = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages])
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
     const ta = e.target
     ta.style.height = 'auto'
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
+  }
+
+  const submit = () => {
+    const trimmed = input.trim()
+    if (!trimmed || isSending) return
+    onSend(trimmed)
+    setInput('')
+    if (taRef.current) taRef.current.style.height = 'auto'
+  }
+
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    submit()
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      submit()
+    }
   }
 
   const scopeLabel = scopeTopics.length > 0 ? scopeTopics.join(', ') : 'no topics'
@@ -62,7 +92,7 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
       </div>
 
       {/* Messages */}
-      <div className="chat-messages">
+      <div className="chat-messages" ref={scrollRef}>
         {messages.map((msg, idx) => (
           <div
             key={msg.id}
@@ -85,11 +115,36 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
                 </div>
               )}
 
-              {msg.isStreaming ? (
+              {msg.isStreaming && msg.content === '' ? (
                 <StreamingIndicator />
               ) : (
                 <div>
-                  <p className="message-text">{msg.content}</p>
+                  <div className="message-text">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({ children }) => <h2 className="md-h1">{children}</h2>,
+                        h2: ({ children }) => <h2 className="md-h2">{children}</h2>,
+                        h3: ({ children }) => <h3 className="md-h3">{children}</h3>,
+                        p:  ({ children }) => <p  className="md-p">{children}</p>,
+                        ul: ({ children }) => <ul className="md-ul">{children}</ul>,
+                        ol: ({ children }) => <ol className="md-ol">{children}</ol>,
+                        li: ({ children }) => <li className="md-li">{children}</li>,
+                        strong: ({ children }) => <strong className="md-strong">{children}</strong>,
+                        em:     ({ children }) => <em     className="md-em">{children}</em>,
+                        hr: () => <hr className="md-hr" />,
+                        table:  ({ children }) => <table  className="md-table">{children}</table>,
+                        thead:  ({ children }) => <thead  className="md-thead">{children}</thead>,
+                        tr:     ({ children }) => <tr     className="md-tr">{children}</tr>,
+                        th:     ({ children }) => <th     className="md-th">{children}</th>,
+                        td:     ({ children }) => <td     className="md-td">{children}</td>,
+                        code:   ({ children }) => <code   className="md-code">{children}</code>,
+                        pre:    ({ children }) => <pre    className="md-pre">{children}</pre>,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
                   {msg.citations && msg.citations.length > 0 && (
                     <div className="citations">
                       {msg.citations.map(c => (
@@ -107,17 +162,23 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
       </div>
 
       {/* Input */}
-      <div className="chat-input-wrap">
+      <form className="chat-input-wrap" onSubmit={onSubmit}>
         <div className="chat-input-box">
           <textarea
             ref={taRef}
             value={input}
             onChange={handleInput}
+            onKeyDown={onKeyDown}
             placeholder="Ask about your notes…"
             rows={1}
             className="chat-textarea"
+            disabled={isSending}
           />
-          <button className="send-button">
+          <button
+            type="submit"
+            className="send-button"
+            disabled={isSending || !input.trim()}
+          >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path
                 className="send-icon"
@@ -129,8 +190,8 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
             </svg>
           </button>
         </div>
-        <p className="chat-hint">Scoped to {scopeLabel} · Enter to send</p>
-      </div>
+        <p className="chat-hint">Scoped to {scopeLabel} · Shift+Enter for new line</p>
+      </form>
     </main>
   )
 }

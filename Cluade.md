@@ -125,4 +125,11 @@ Bold contrast — white on near-black — not muted or gray-washed.
 - Negative tracking on headings 22px+, zero everywhere else
 - 700 for display impact, 600 for all headings, 500 for UI chrome, 400 for reading copy
 
+## Design
+- Confirm design direction with a brief plan before implementing multi-file CSS changes
+- Avoid generic dark SaaS aesthetics; prioritize distinctive visual identity
 
+## Edit Workflow
+- Before large multi-file edits, propose a brief plan and wait for confirmation
+- For visual/UI changes, render and verify in browser before declaring complete
+- When fixing bugs, list all identified issues first, then fix in a single batch
