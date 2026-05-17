@@ -1,79 +1,60 @@
-# StudyMate — frontend shell
+## Project
+StudyMate — AI study assistant. Next.js app router, TypeScript, Tailwind only (no component libs).
 
-Static UI only. No API calls, no database, no AI. All data is hardcoded.
-The goal is to get all views rendering and looking right before any backend work starts.
+## Current phase: 4 — Retrieval + Citations
+Previously completed: Phase 1 (shell), Phase 2 (upload pipeline), Phase 3 (chat, no RAG)
+Next: Phase 5 (Postgres persistence)
 
 ## Commands
-
-```bash
 npm run dev        # localhost:3000
 npm run typecheck  # tsc --noEmit
 npm run lint
-```
 
 ## Layout
+Split screen on /study:
+- Left panel (~400px fixed): DocumentPanel — topic chips, upload zone, doc list
+- Right panel (flex-1): ChatPanel — scope chips, message thread, input
+- Top: TopBar with tab nav between /study and /progress
 
-Split screen on the study view:
-- Left panel (~400px fixed width): DocumentPanel — topic chips at top, upload zone, doc list below
-- Right panel (flex-1): ChatPanel — scope chips in header, message thread, input at bottom
-- Top: TopBar with tab navigation switching between /study and /progress
+## Architecture
 
-## Hardcoded mock data
+### Chunk schema (Phase 4 source of truth)
+{
+  id: string,            // crypto.randomUUID()
+  documentId: string,
+  text: string,
+  pageNumber: number,
+  chunkIndex: number,
+  embedding: number[]    // 1536-dim, text-embedding-3-small
+}
 
-Use this throughout — don't invent your own:
+### In-memory store (Phase 4 only — replaced by Postgres in Phase 5)
+A module-level Map<documentId, Chunk[]> in lib/store.ts.
+Do NOT reach for pg, Prisma, or any DB in Phase 4.
 
-```ts
-const TOPICS = ['AP Bio', 'Calc BC', 'US History']
+### Embedding model
+OpenAI text-embedding-3-small. Batch chunks in a single embeddings API call.
+Do NOT use text-embedding-ada-002.
 
-const DOCUMENTS = [
-  { id: '1', name: 'lecture-7-cellular-respiration.pdf', subject: 'AP Bio',     pageCount: 12, status: 'ready' },
-  { id: '2', name: 'chapter-4-limits-continuity.pdf',   subject: 'Calc BC',    pageCount: 8,  status: 'ready' },
-  { id: '3', name: 'reconstruction-era-notes.pdf',       subject: 'US History', pageCount: 5,  status: 'processing' },
-]
+### Retrieval
+Cosine similarity in JS at query time (no pgvector yet).
+Return top 5 chunks. Pass to Claude with [Source N, page P] labels.
 
-const MESSAGES = [
-  {
-    id: '1', role: 'user',
-    content: 'What happens during the electron transport chain?',
-  },
-  {
-    id: '2', role: 'assistant',
-    content: 'The electron transport chain occurs in the inner mitochondrial membrane. Electrons from NADH and FADH₂ pass through four protein complexes, releasing energy to pump H⁺ ions across the membrane. This proton gradient drives ATP synthase to produce ~32–34 ATP per glucose. Oxygen is the final electron acceptor, forming water.',
-    citations: [
-      { fileName: 'lecture-7.pdf', pageNumber: 4 },
-      { fileName: 'lecture-7.pdf', pageNumber: 6 },
-    ],
-  },
-  {
-    id: '3', role: 'user',
-    content: "What's the difference between complex I and complex II?",
-  },
-]
-```
+### Citation format
+Claude is prompted to cite as [Source N]. Parse these in the response and
+render as CitationChip components showing `fileName · p.N`.
 
-## Component checklist
-
-- [ ] TopBar — tab nav switching between /study and /progress routes
-- [ ] TopicChips — toggleable chips, active chip has accent style, "+ New topic" chip at end (no handler yet)
-- [ ] UploadZone — dashed border zone with icon and label, hover state, no upload logic
-- [ ] DocList — renders DOCUMENTS with name, subject, page count, status badge (ready = green, processing = amber)
-- [ ] DocumentPanel — composes TopicChips + UploadZone + DocList
-- [ ] CitationChip — small inline chip showing `fileName · p.N`, clicking does nothing yet
-- [ ] MessageThread — renders MESSAGES, user and assistant messages visually distinct, assistant messages show CitationChips, last message shows pulsing "generating..." indicator
-- [ ] ChatInput — auto-resizing textarea + send button, no submit handler yet
-- [ ] ChatPanel — header with model label + scope chips, MessageThread, ChatInput
-- [ ] ProgressView — centered placeholder text, no content yet
-- [ ] /study/page.tsx — DocumentPanel left + ChatPanel right, full viewport height
-- [ ] /progress/page.tsx — renders ProgressView
+## API routes (Phase 4 additions)
+POST /api/ingest     — extract text (unpdf), chunk, embed, store
+POST /api/chat       — embed query, retrieve top-5 chunks, call Claude with context
 
 ## Rules
-
-- All components use 'use client' for now — chip toggles and tab switching use local useState
-- No API calls anywhere
-- No useEffect data fetching
-- No external component libraries (shadcn, radix, etc.) — Tailwind only
-- Functional components, no class components
+- 'use client' only on components that need it (chip toggles, input state)
+- Server components and API routes for all data work
+- Tailwind only — no shadcn, radix, or other component libs
+- Functional components only
 - No inline styles
+- Do not re-embed a document if chunks already exist for that documentId
 
 ## Style direction
  

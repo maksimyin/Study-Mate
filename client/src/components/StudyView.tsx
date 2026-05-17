@@ -46,6 +46,8 @@ export default function StudyView() {
       if (!res.ok) throw new Error('Upload failed')
       const data: { document: Document } = await res.json()
 
+      console.log(data.document)
+
       setDocs(prev => prev.map(d => d.id === tempId ? data.document : d))
     } catch {
       setDocs(prev => prev.map(d => d.id === tempId ? { ...d, status: 'failed' } : d))
