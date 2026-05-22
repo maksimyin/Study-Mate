@@ -1,6 +1,6 @@
 export type View = 'study' | 'progress'
 
-export type DocStatus = 'ready' | 'processing' | 'failed'
+export type DocStatus = 'ready' | 'processing' | 'indexing' | 'failed'
 
 export interface Document {
   id: string
@@ -9,11 +9,15 @@ export interface Document {
   pages: number
   uploadedAt: string
   status: DocStatus
+  injested: boolean
 }
 
 export interface Citation {
   id: string
-  label: string
+  filename: string
+  page: number
+  chunk_index: number
+  char_offset: number
 }
 
 export interface Message {

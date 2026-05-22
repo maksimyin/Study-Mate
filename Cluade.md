@@ -28,21 +28,18 @@ Split screen on /study:
   embedding: number[]    // 1536-dim, text-embedding-3-small
 }
 
-### In-memory store (Phase 4 only — replaced by Postgres in Phase 5)
-A module-level Map<documentId, Chunk[]> in lib/store.ts.
-Do NOT reach for pg, Prisma, or any DB in Phase 4.
+### In-memory store 
+Replace module-level Map<documentId, Chunk[]> in lib/store.ts with pgvector PostgresSQL database 
+Embedded chunks should be stored in pgvector
 
 ### Embedding model
 OpenAI text-embedding-3-small. Batch chunks in a single embeddings API call.
 Do NOT use text-embedding-ada-002.
 
 ### Retrieval
-Cosine similarity in JS at query time (no pgvector yet).
-Return top 5 chunks. Pass to Claude with [Source N, page P] labels.
+Use pgvectors cosine query function
+Return top 5 chunks. Pass to Claude in proper JSON format with appropraite citations.
 
-### Citation format
-Claude is prompted to cite as [Source N]. Parse these in the response and
-render as CitationChip components showing `fileName · p.N`.
 
 ## API routes (Phase 4 additions)
 POST /api/ingest     — extract text (unpdf), chunk, embed, store

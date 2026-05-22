@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import './ChatPanel.css'
-import type { Message } from '../types'
+import type { Citation, Message } from '../types'
 
 interface Props {
   topics: string[]
@@ -11,6 +12,49 @@ interface Props {
   messages: Message[]
   isSending: boolean
   onSend: (content: string) => void
+}
+
+function processContent(content: string): string {
+  return content.replace(/\[(\d+)\]/g, '<sup class="cite-ref">$1</sup>')
+}
+
+function SourcesSection({ citations }: { citations: Citation[] }) {
+  const [open, setOpen] = useState(false)
+
+  // Dedupe by (filename, page) — collect all citation IDs that map to the same page
+  type Group = { ids: string[]; filename: string; page: number }
+  const groups: Group[] = []
+  const seen = new Map<string, number>()
+  for (const c of citations) {
+    const key = `${c.filename}::${c.page}`
+    const idx = seen.get(key)
+    if (idx !== undefined) {
+      groups[idx].ids.push(c.id)
+    } else {
+      seen.set(key, groups.length)
+      groups.push({ ids: [c.id], filename: c.filename, page: c.page })
+    }
+  }
+
+  return (
+    <div className="sources-section">
+      <button className="sources-toggle" onClick={() => setOpen(o => !o)}>
+        <span className="sources-chevron">{open ? '▾' : '▸'}</span>
+        Sources used · {groups.length}
+      </button>
+      {open && (
+        <div className="sources-list">
+          {groups.map((g, i) => (
+            <div key={i} className="source-item">
+              <span className="source-num">{g.ids.map(id => `[${id}]`).join('')}</span>
+              <span className="source-filename">{g.filename}</span>
+              {g.page > 0 && <span className="source-page">p. {g.page}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function StreamingIndicator() {
@@ -122,6 +166,7 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
                   <div className="message-text">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw]}
                       components={{
                         h1: ({ children }) => <h2 className="md-h1">{children}</h2>,
                         h2: ({ children }) => <h2 className="md-h2">{children}</h2>,
@@ -142,17 +187,11 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
                         pre:    ({ children }) => <pre    className="md-pre">{children}</pre>,
                       }}
                     >
-                      {msg.content}
+                      {processContent(msg.content)}
                     </ReactMarkdown>
                   </div>
                   {msg.citations && msg.citations.length > 0 && (
-                    <div className="citations">
-                      {msg.citations.map(c => (
-                        <a key={c.id} href="#" className="citation-chip">
-                          {c.label}
-                        </a>
-                      ))}
-                    </div>
+                    <SourcesSection citations={msg.citations} />
                   )}
                 </div>
               )}

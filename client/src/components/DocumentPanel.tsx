@@ -39,7 +39,7 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
         setTimeout(() => setNewIds(s => { const n = new Set(s); n.delete(doc.id); return n }), 500)
       }
       const pd = prev.find(d => d.id === doc.id)
-      if (pd?.status === 'processing' && doc.status === 'ready') {
+      if ((pd?.status === 'processing' || pd?.status === 'indexing') && doc.status === 'ready') {
         setJustCompleted(s => new Set([...s, doc.id]))
         setTimeout(() => setJustCompleted(s => { const n = new Set(s); n.delete(doc.id); return n }), 1800)
       }
@@ -145,7 +145,7 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
               doc.status === 'ready' && !isDone ? 'ready' : '',
               isDone ? 'just-done animate-glow-ok' : '',
               isNew  ? 'file-card-new' : '',
-              doc.status === 'processing' ? 'processing' : '',
+              doc.status === 'processing' || doc.status === 'indexing' ? 'processing' : '',
             ].filter(Boolean).join(' ')
 
             return (
@@ -155,7 +155,7 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
                 <div className="file-info">
                   <div className="file-name">{doc.name}</div>
                   <div className="file-meta">{doc.topic} · {doc.pages}p · {doc.uploadedAt}</div>
-                  {doc.status === 'processing' && <ProcessingBar />}
+                  {(doc.status === 'processing' || doc.status === 'indexing') && <ProcessingBar />}
                 </div>
 
                 {isDone ? (
@@ -168,6 +168,8 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
                   <span className="status-badge status-ready">ready</span>
                 ) : doc.status === 'processing' ? (
                   <span className="status-badge status-processing">uploading</span>
+                ) : doc.status === 'indexing' ? (
+                  <span className="status-badge status-processing">indexing</span>
                 ) : (
                   <span className="status-badge status-failed">failed</span>
                 )}

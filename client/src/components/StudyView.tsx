@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import DocumentPanel from './DocumentPanel'
 import ChatPanel from './ChatPanel'
-import type { Document, Message } from '../types'
+import type { Citation, Document, Message } from '../types'
 
 const TOPICS = ['AP Bio', 'Calc BC', 'US History']
 
@@ -27,6 +27,7 @@ export default function StudyView() {
 
   const handleUpload = async (file: File) => {
     const tempId = Date.now().toString()
+    let realId = tempId
 
     setDocs(prev => [{
       id: tempId,
@@ -35,6 +36,7 @@ export default function StudyView() {
       pages: 0,
       uploadedAt: 'just now',
       status: 'processing',
+      injested: false,
     }, ...prev])
 
     try {
@@ -42,15 +44,23 @@ export default function StudyView() {
       form.append('file', file)
       form.append('topic', activeTopics[0] ?? 'General')
 
-      const res = await fetch('/api/upload', { method: 'POST', body: form })
-      if (!res.ok) throw new Error('Upload failed')
-      const data: { document: Document } = await res.json()
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: form })
+      if (!uploadRes.ok) throw new Error('Upload failed')
+      const { document: doc }: { document: Document } = await uploadRes.json()
+      realId = doc.id
 
-      console.log(data.document)
+      setDocs(prev => prev.map(d => d.id === tempId ? { ...doc, status: 'indexing' } : d))
 
-      setDocs(prev => prev.map(d => d.id === tempId ? data.document : d))
+      const ingestRes = await fetch('/api/injest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId: doc.id }),
+      })
+      if (!ingestRes.ok) throw new Error('Ingest failed')
+
+      setDocs(prev => prev.map(d => d.id === realId ? { ...d, status: 'ready', injested: true } : d))
     } catch {
-      setDocs(prev => prev.map(d => d.id === tempId ? { ...d, status: 'failed' } : d))
+      setDocs(prev => prev.map(d => d.id === realId ? { ...d, status: 'failed' } : d))
     }
   }
 
@@ -79,10 +89,23 @@ export default function StudyView() {
 
     const finalize = (errorFallback?: string) => {
       clearInterval(intervalId)
+
+      let finalContent = errorFallback ?? displayedContent
+      let citations: Citation[] = []
+
+      if (!errorFallback) {
+        const marker = 'SOURCES_JSON:'
+        const idx = finalContent.lastIndexOf(marker)
+        if (idx !== -1) {
+          try { citations = JSON.parse(finalContent.slice(idx + marker.length).trim()) } catch { /* ignore */ }
+          finalContent = finalContent.slice(0, idx).trim()
+        }
+      }
+
       setMessages(prev =>
         prev.map(m =>
           m.id === assistantId
-            ? { ...m, content: errorFallback ?? displayedContent, isStreaming: false }
+            ? { ...m, content: finalContent, citations, isStreaming: false }
             : m
         )
       )

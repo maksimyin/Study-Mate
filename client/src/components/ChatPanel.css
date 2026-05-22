@@ -245,33 +245,100 @@
   color: #d0d0d0;
 }
 
-/* Citations */
-.citations {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-}
-
-.citation-chip {
+/* Inline citation reference chip */
+sup.cite-ref {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(110, 231, 183, 0.1);
+  border: 1px solid rgba(110, 231, 183, 0.22);
+  color: #6EE7B7;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: super;
+  margin: 0 1px;
+  font-style: normal;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  font-weight: 400;
-  padding: 3px 8px;
-  border-radius: 5px;
-  background: #1c1c1c;
-  border: 1px solid rgba(255,255,255,0.12);
-  color: #888888;
-  text-decoration: none;
-  transition: all 0.15s ease;
+  cursor: default;
+  letter-spacing: 0;
 }
 
-.citation-chip:hover {
-  border-color: rgba(110, 231, 183, 0.28);
+/* Sources collapsible section */
+.sources-section {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.sources-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: #555555;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s ease;
+}
+
+.sources-toggle:hover { color: #888888; }
+
+.sources-chevron {
+  font-size: 9px;
+  color: inherit;
+  transition: color 0.15s ease;
+}
+
+.sources-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 5px;
+}
+
+.source-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
   color: #6EE7B7;
-  background: rgba(110, 231, 183, 0.06);
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.source-filename {
+  font-size: 12px;
+  color: #888888;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-page {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #444444;
+  flex-shrink: 0;
 }
 
 /* Streaming indicator */
