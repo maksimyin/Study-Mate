@@ -4,8 +4,9 @@ import type { Document } from '../types'
 
 interface Props {
   topics: string[]
-  activeTopics: string[]
-  onToggleTopic: (t: string) => void
+  activeTopic: string
+  onTopicChange: (t: string) => void
+  onAddTopic: (name: string) => void
   docs: Document[]
   onUpload: (file: File) => void
 }
@@ -13,16 +14,132 @@ interface Props {
 function ExtBadge({ name }: { name: string }) {
   const ext = (name.split('.').pop() ?? 'file').toLowerCase()
   const cls = ext === 'pdf' ? 'ext-badge-pdf' : ext === 'md' ? 'ext-badge-md' : 'ext-badge-default'
-  return (
-    <div className={`ext-badge ${cls}`}>{ext}</div>
-  )
+  return <div className={`ext-badge ${cls}`}>{ext}</div>
 }
 
 function ProcessingBar() {
   return <div className="processing-bar shimmer-track" />
 }
 
-export default function DocumentPanel({ topics, activeTopics, onToggleTopic, docs, onUpload }: Props) {
+function TopicDropdown({
+  topics, activeTopic, onTopicChange, onAddTopic,
+}: {
+  topics: string[]; activeTopic: string
+  onTopicChange: (t: string) => void; onAddTopic: (name: string) => void
+}) {
+  const [isOpen,        setIsOpen]        = useState(false)
+  const [isAdding,      setIsAdding]      = useState(false)
+  const [newTopicInput, setNewTopicInput] = useState('')
+  const wrapRef  = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!isOpen) return
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+        setIsAdding(false)
+        setNewTopicInput('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [isOpen])
+
+  // Focus input when adding mode opens
+  useEffect(() => {
+    if (isAdding) inputRef.current?.focus()
+  }, [isAdding])
+
+  const select = (t: string) => {
+    onTopicChange(t)
+    setIsOpen(false)
+    setIsAdding(false)
+    setNewTopicInput('')
+  }
+
+  const confirmNew = () => {
+    const name = newTopicInput.trim()
+    if (name) onAddTopic(name)
+    setIsAdding(false)
+    setNewTopicInput('')
+    setIsOpen(false)
+  }
+
+  return (
+    <div className="topic-dropdown-wrap" ref={wrapRef}>
+      <button
+        className={`topic-trigger${isOpen ? ' open' : ''}`}
+        onClick={() => { setIsOpen(o => !o); setIsAdding(false); setNewTopicInput('') }}
+      >
+        <span className="topic-trigger-label">{activeTopic || '—'}</span>
+        <svg
+          className={`topic-chevron${isOpen ? ' open' : ''}`}
+          width="10" height="10" viewBox="0 0 10 10" fill="none"
+        >
+          <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4"
+            strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="topic-dropdown">
+          {topics.map(t => (
+            <button
+              key={t}
+              className={`topic-dropdown-item${activeTopic === t ? ' active' : ''}`}
+              onClick={() => select(t)}
+            >
+              <span className="topic-check">
+                {activeTopic === t && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    <path d="M1.5 5.2L3.7 7.5 8.5 2" stroke="#6EE7B7"
+                      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+              {t}
+            </button>
+          ))}
+
+          <div className="topic-dropdown-divider" />
+
+          {isAdding ? (
+            <div className="topic-new-row">
+              <input
+                ref={inputRef}
+                value={newTopicInput}
+                onChange={e => setNewTopicInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter')  confirmNew()
+                  if (e.key === 'Escape') { setIsAdding(false); setNewTopicInput('') }
+                }}
+                placeholder="Topic name…"
+                className="topic-new-input"
+              />
+              <button onClick={confirmNew}
+                className="topic-new-btn topic-new-confirm"
+                disabled={!newTopicInput.trim()}>✓</button>
+              <button onClick={() => { setIsAdding(false); setNewTopicInput('') }}
+                className="topic-new-btn topic-new-cancel">✕</button>
+            </div>
+          ) : (
+            <button
+              className="topic-dropdown-item topic-dropdown-add"
+              onClick={() => setIsAdding(true)}
+            >
+              <span className="topic-check" />
+              + New topic
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function DocumentPanel({ topics, activeTopic, onTopicChange, onAddTopic, docs, onUpload }: Props) {
   const [isDragOver,    setIsDragOver]    = useState(false)
   const [justCompleted, setJustCompleted] = useState<Set<string>>(new Set())
   const [newIds,        setNewIds]        = useState<Set<string>>(new Set())
@@ -62,10 +179,10 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
   }
 
   const readyCount = docs.filter(d => d.status === 'ready').length
+
   return (
     <aside className="doc-panel">
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -74,25 +191,20 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
         onChange={handleFileChange}
       />
 
-      {/* Header */}
       <div className="doc-panel-header">
         <span className="doc-panel-title">Documents</span>
         <span className="doc-count-badge">{docs.length} files · {readyCount} ready</span>
       </div>
 
-      {/* Topic chips */}
+      {/* Topic dropdown */}
       <div className="doc-topic-row">
         <span className="doc-topic-title">Topic</span>
-        {topics.map(t => (
-          <button
-            key={t}
-            onClick={() => onToggleTopic(t)}
-            className={`topic-chip${activeTopics.includes(t) ? ' active' : ''}`}
-          >
-            {t}
-          </button>
-        ))}
-        <button className="topic-chip topic-chip-new">+ New</button>
+        <TopicDropdown
+          topics={topics}
+          activeTopic={activeTopic}
+          onTopicChange={onTopicChange}
+          onAddTopic={onAddTopic}
+        />
       </div>
 
       {/* Upload zone */}
@@ -122,7 +234,7 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
           <p className="upload-label">
             {isDragOver ? 'Release to upload' : 'Drop files or click to browse'}
           </p>
-          <p className="upload-hint">Tagged to active topic · 1 GB max</p>
+          <p className="upload-hint">Tagged to {activeTopic || 'active topic'} · 1 GB max</p>
         </div>
 
         <div className="upload-ext-row">
@@ -132,7 +244,7 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
         </div>
       </div>
 
-      {/* File list */}
+      {/* File list scoped to active topic */}
       <div className="doc-files-section">
         <p className="doc-files-label">Uploaded files</p>
         <div className="file-list">
@@ -161,7 +273,8 @@ export default function DocumentPanel({ topics, activeTopics, onToggleTopic, doc
                 {isDone ? (
                   <span className="status-done-icon animate-check-pop">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                      <path d="M1.5 5.2L3.7 7.5 8.5 2" stroke="#3ecf8e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M1.5 5.2L3.7 7.5 8.5 2" stroke="#3ecf8e" strokeWidth="1.5"
+                        strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </span>
                 ) : doc.status === 'ready' ? (

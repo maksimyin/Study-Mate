@@ -3,36 +3,59 @@ import DocumentPanel from './DocumentPanel'
 import ChatPanel from './ChatPanel'
 import type { Citation, Document, Message } from '../types'
 
-const TOPICS = ['AP Bio', 'Calc BC', 'US History']
-
 export default function StudyView() {
-  const [activeTopics, setActiveTopics] = useState<string[]>(['AP Bio'])
-  const [scopeTopics,  setScopeTopics]  = useState<string[]>(['AP Bio'])
-  const [docs, setDocs]                 = useState<Document[]>([])
-  const [messages, setMessages]         = useState<Message[]>([])
-  const [isSending, setIsSending]       = useState(false)
+  const [topics,      setTopics]      = useState<string[]>([])
+  const [activeTopic, setActiveTopic] = useState<string>('')
+  const [docs,        setDocs]        = useState<Document[]>([])
+  const [messages,    setMessages]    = useState<Message[]>([])
+  const [isSending,   setIsSending]   = useState(false)
 
+  // Load topic list from DB on mount; default to 'General' if none exist
   useEffect(() => {
-    fetch('/api/documents')
+    fetch('/api/topics')
+      .then(r => r.json())
+      .then((data: { topics: string[] }) => {
+        const loaded = data.topics.length > 0 ? data.topics : ['General']
+        setTopics(loaded)
+        setActiveTopic(prev => prev || loaded[0])
+      })
+      .catch(() => {
+        setTopics(['General'])
+        setActiveTopic(prev => prev || 'General')
+      })
+  }, [])
+
+  // Reload docs and message history whenever the active topic changes
+  useEffect(() => {
+    if (!activeTopic) return
+
+    fetch(`/api/documents?topic=${encodeURIComponent(activeTopic)}`)
       .then(r => r.json())
       .then((data: { documents: Document[] }) => setDocs(data.documents))
       .catch(console.error)
-  }, [])
 
-  const toggleTopic = (t: string) =>
-    setActiveTopics(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+    setMessages([])
+    fetch(`/api/messages?topic=${encodeURIComponent(activeTopic)}`)
+      .then(r => r.json())
+      .then((data: { messages: Array<{ id: string; role: 'user' | 'assistant'; content: string }> }) => {
+        setMessages(data.messages.map(m => ({ id: m.id, role: m.role, content: m.content })))
+      })
+      .catch(console.error)
+  }, [activeTopic])
 
-  const toggleScope = (t: string) =>
-    setScopeTopics(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+  const handleAddTopic = (name: string) => {
+    setTopics(prev => prev.includes(name) ? prev : [...prev, name])
+    setActiveTopic(name)
+  }
 
   const handleUpload = async (file: File) => {
-    const tempId = Date.now().toString()
-    let realId = tempId
+    const tempId = `temp-${Date.now()}`
+    let realId   = tempId
 
     setDocs(prev => [{
       id: tempId,
       name: file.name,
-      topic: activeTopics[0] ?? 'General',
+      topic: activeTopic,
       pages: 0,
       uploadedAt: 'just now',
       status: 'processing',
@@ -42,7 +65,7 @@ export default function StudyView() {
     try {
       const form = new FormData()
       form.append('file', file)
-      form.append('topic', activeTopics[0] ?? 'General')
+      form.append('topic', activeTopic)
 
       const uploadRes = await fetch('/api/upload', { method: 'POST', body: form })
       if (!uploadRes.ok) throw new Error('Upload failed')
@@ -59,6 +82,14 @@ export default function StudyView() {
       if (!ingestRes.ok) throw new Error('Ingest failed')
 
       setDocs(prev => prev.map(d => d.id === realId ? { ...d, status: 'ready', injested: true } : d))
+
+      // Re-sync topic list now that a new doc is in the DB
+      fetch('/api/topics')
+        .then(r => r.json())
+        .then((data: { topics: string[] }) => {
+          if (data.topics.length > 0) setTopics(data.topics)
+        })
+        .catch(console.error)
     } catch {
       setDocs(prev => prev.map(d => d.id === realId ? { ...d, status: 'failed' } : d))
     }
@@ -68,11 +99,7 @@ export default function StudyView() {
     if (isSending) return
     setIsSending(true)
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content,
-    }
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content }
     const assistantId = (Date.now() + 1).toString()
 
     setMessages(prev => [
@@ -81,11 +108,9 @@ export default function StudyView() {
       { id: assistantId, role: 'assistant', content: '', isStreaming: true },
     ])
 
-    // Network chunks arrive in bursts. Buffer incoming text and drain at a
-    // fixed visual rate so text types out smoothly instead of appearing in blocks.
-    let pendingBuffer = ''    // received but not yet displayed
-    let displayedContent = '' // currently visible in the UI
-    let streamComplete = false
+    let pendingBuffer    = ''
+    let displayedContent = ''
+    let streamComplete   = false
 
     const finalize = (errorFallback?: string) => {
       clearInterval(intervalId)
@@ -95,7 +120,7 @@ export default function StudyView() {
 
       if (!errorFallback) {
         const marker = 'SOURCES_JSON:'
-        const idx = finalContent.lastIndexOf(marker)
+        const idx    = finalContent.lastIndexOf(marker)
         if (idx !== -1) {
           try { citations = JSON.parse(finalContent.slice(idx + marker.length).trim()) } catch { /* ignore */ }
           finalContent = finalContent.slice(0, idx).trim()
@@ -112,15 +137,12 @@ export default function StudyView() {
       setIsSending(false)
     }
 
-    // Drain 3 chars per 20ms tick (~150 chars/sec) — enough for smooth
-    // visible typing. Jumps to 12 chars/tick when the buffer is large
-    // to catch up at the end of long responses without visible lag.
     let intervalId = 0
     intervalId = window.setInterval(() => {
       if (pendingBuffer.length > 0) {
         const chunkSize = pendingBuffer.length > 200 ? 12 : 3
-        const chunk = pendingBuffer.slice(0, chunkSize)
-        pendingBuffer = pendingBuffer.slice(chunkSize)
+        const chunk     = pendingBuffer.slice(0, chunkSize)
+        pendingBuffer   = pendingBuffer.slice(chunkSize)
         displayedContent += chunk
         setMessages(prev =>
           prev.map(m => m.id === assistantId ? { ...m, content: displayedContent } : m)
@@ -131,14 +153,10 @@ export default function StudyView() {
     }, 20)
 
     try {
-      const apiMessages = [...messages, userMsg]
-        .filter(m => !m.isStreaming && m.content.trim() !== '')
-        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ message: content, topic: activeTopic }),
       })
 
       if (!res.ok) throw new Error(`Server error ${res.status}`)
@@ -156,14 +174,13 @@ export default function StudyView() {
         for (const line of raw.split('\n')) {
           if (!line.startsWith('data: ')) continue
           const payload = line.slice(6)
-          if (payload === '[DONE]') break outer
+          if (payload === '[DONE]')  break outer
           if (payload === '[ERROR]') throw new Error('Stream error from server')
           pendingBuffer += JSON.parse(payload) as string
         }
       }
 
-      streamComplete = true // drain interval will call finalize() when buffer empties
-
+      streamComplete = true
     } catch {
       finalize('Something went wrong. Please try again.')
     }
@@ -172,16 +189,15 @@ export default function StudyView() {
   return (
     <div className="flex flex-1 overflow-hidden">
       <DocumentPanel
-        topics={TOPICS}
-        activeTopics={activeTopics}
-        onToggleTopic={toggleTopic}
+        topics={topics}
+        activeTopic={activeTopic}
+        onTopicChange={setActiveTopic}
+        onAddTopic={handleAddTopic}
         docs={docs}
         onUpload={(f) => { void handleUpload(f) }}
       />
       <ChatPanel
-        topics={TOPICS}
-        scopeTopics={scopeTopics}
-        onToggleScope={toggleScope}
+        activeTopic={activeTopic}
         messages={messages}
         isSending={isSending}
         onSend={handleChatInput}

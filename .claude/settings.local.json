@@ -9,7 +9,20 @@
       "Bash(Get-ChildItem -Path C:\\\\Users\\\\yinma\\\\StudyMate -Force)",
       "Bash(Select-Object Name, PSIsContainer)",
       "Bash(npm install *)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "mcp__supabase__list_tables",
+      "Bash(echo \"Hello world test content for upload\")",
+      "Bash(curl -s -X POST http://localhost:3001/api/upload -F 'topic=AP Bio' -F 'file=@/tmp/test.txt;type=text/plain')",
+      "Read(//tmp/**)",
+      "Bash(kill %1)",
+      "Bash(echo \"Hello world test content\")",
+      "Bash(curl -s -X POST http://localhost:3001/api/upload -F 'topic=AP Bio' -F 'file=@C:/Users/yinma/test.txt;type=text/plain')",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(curl -v -X POST http://localhost:3001/api/documents)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

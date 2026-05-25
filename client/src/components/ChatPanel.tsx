@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import './ChatPanel.css'
 import type { Citation, Message } from '../types'
 
 interface Props {
-  topics: string[]
-  scopeTopics: string[]
-  onToggleScope: (t: string) => void
+  activeTopic: string
   messages: Message[]
   isSending: boolean
   onSend: (content: string) => void
@@ -74,7 +75,7 @@ function StreamingIndicator() {
   )
 }
 
-export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages, isSending, onSend }: Props) {
+export default function ChatPanel({ activeTopic, messages, isSending, onSend }: Props) {
   const [input, setInput]   = useState('')
   const taRef               = useRef<HTMLTextAreaElement>(null)
   const scrollRef           = useRef<HTMLDivElement>(null)
@@ -111,7 +112,7 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
     }
   }
 
-  const scopeLabel = scopeTopics.length > 0 ? scopeTopics.join(', ') : 'no topics'
+  const scopeLabel = activeTopic
 
   return (
     <main className="chat-panel">
@@ -122,16 +123,8 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
         <span className="chat-rag-label">· RAG · top 5 chunks</span>
 
         <div className="chat-scope-wrap">
-          <span className="chat-scope-label">Scope</span>
-          {topics.map(t => (
-            <button
-              key={t}
-              onClick={() => onToggleScope(t)}
-              className={`scope-chip${scopeTopics.includes(t) ? ' active' : ''}`}
-            >
-              {t}
-            </button>
-          ))}
+          <span className="chat-scope-label">Studying</span>
+          <span className="scope-chip active">{activeTopic}</span>
         </div>
       </div>
 
@@ -162,11 +155,11 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
               {msg.isStreaming && msg.content === '' ? (
                 <StreamingIndicator />
               ) : (
-                <div>
+                <div className="prose prose-sm max-w-none">
                   <div className="message-text">
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeRaw]}
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeRaw, rehypeKatex]}
                       components={{
                         h1: ({ children }) => <h2 className="md-h1">{children}</h2>,
                         h2: ({ children }) => <h2 className="md-h2">{children}</h2>,
@@ -183,7 +176,23 @@ export default function ChatPanel({ topics, scopeTopics, onToggleScope, messages
                         tr:     ({ children }) => <tr     className="md-tr">{children}</tr>,
                         th:     ({ children }) => <th     className="md-th">{children}</th>,
                         td:     ({ children }) => <td     className="md-td">{children}</td>,
-                        code:   ({ children }) => <code   className="md-code">{children}</code>,
+                        code({ node, inline, className, children, ...props }: any) {
+                            const match = /language-(\w+)/.exec(className || '')
+                            
+                            if (!inline && match) {
+                                return (
+                                <SyntaxHighlighter language={match[1]}>
+                                    {String(children)}
+                                </SyntaxHighlighter>
+                                )
+                            }
+                            
+                            if (!inline) {
+                                return <pre className="md-code-block"><code>{children}</code></pre>
+                            }
+                            
+                            return <code className="md-code">{children}</code>
+                        },
                         pre:    ({ children }) => <pre    className="md-pre">{children}</pre>,
                       }}
                     >

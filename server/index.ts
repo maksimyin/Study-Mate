@@ -6,6 +6,7 @@ import multer from 'multer'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import {getDocumentProxy, extractText} from 'unpdf'
+import pool from './db'
 
 const app = express()
 const PORT = process.env.PORT ?? 3001
@@ -13,7 +14,7 @@ const PORT = process.env.PORT ?? 3001
 app.use(express.json())
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY })
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai    = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 const SYSTEM_PROMPT =
   'You are StudyMate, an AI study assistant. Help students understand their study materials clearly and concisely using the information provided. ' +
@@ -26,31 +27,7 @@ const SYSTEM_PROMPT =
   'Only include sources that were actually cited. Omit the SOURCES_JSON line entirely if no context was used. ' +
   'If the context does not cover the question, answer from general knowledge and say so.'
 
-// ── In-memory document store ──────────────────────────────────
-interface StoredDoc {
-  id: string
-  name: string,
-  filePath: string,
-  topic: string
-  pages: number
-  uploadedAt: string
-  status: 'ready' | 'processing' | 'failed',
-  injested: boolean
-}
-const documents: StoredDoc[] = []
-
-interface Chunk {
-  docId: string
-  text: string
-  textWithMeta: string
-  embedding: number[]
-  page: number
-  topic: string
-  filename: string
-  chunk_index: number   // position of this chunk within the document
-  char_offset: number   // document-level character offset of chunk start
-}
-const chunkStore = new Map<string, Chunk[]>()
+// ── Helpers ───────────────────────────────────────────────────
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
   const BATCH = 100
@@ -65,50 +42,58 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
   return results
 }
 
-function dotProduct(a: number[], b: number[]): number {
-  let sum = 0
-  for (let i = 0; i < a.length; i++) sum += a[i] * b[i]
-  return sum
+interface RetrievedChunk {
+  topic: string; filename: string; page: number
+  chunk_index: number; char_offset: number; textWithMeta: string
 }
 
-async function retrieveTopChunks(query: string, topK = 5, fetchK = 10): Promise<Chunk[]> {
-  const allChunks: Chunk[] = []
-  for (const chunks of chunkStore.values()) allChunks.push(...chunks)
-  if (allChunks.length === 0) return []
-
+async function retrieveTopChunks(query: string, topic: string, topK = 5, fetchK = 20): Promise<RetrievedChunk[]> {
   const [queryEmbedding] = await embedBatch([query])
+  const vec = `[${queryEmbedding.join(',')}]`
 
-  // Score and take the top fetchK individual chunks
-  const scored = allChunks
-    .map(chunk => ({ chunk, score: dotProduct(queryEmbedding, chunk.embedding) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, fetchK)
+  type Row = {
+    doc_id: string; topic: string; filename: string
+    page: number; chunk_index: number; char_offset: number; content: string; score: number
+  }
 
-  // Group by (docId, page); rank each group by its single best chunk score
-  const pageGroups = new Map<string, { bestScore: number; chunks: Chunk[] }>()
-  for (const { chunk, score } of scored) {
-    const key = `${chunk.docId}::${chunk.page}`
+  const { rows } = await pool.query<Row>(
+    `SELECT doc_id::text, topic, filename, page, chunk_index, char_offset, content,
+            1 - (embedding <=> $2::vector) AS score
+     FROM chunks
+     WHERE topic = $1
+     ORDER BY embedding <=> $2::vector
+     LIMIT $3`,
+    [topic, vec, fetchK]
+  )
+
+  if (rows.length === 0) return []
+
+  // Group by (doc_id, page); keep best score per group
+  const pageGroups = new Map<string, { bestScore: number; rows: Row[] }>()
+  for (const row of rows) {
+    const key = `${row.doc_id}::${row.page}`
     const group = pageGroups.get(key)
     if (!group) {
-      pageGroups.set(key, { bestScore: score, chunks: [chunk] })
+      pageGroups.set(key, { bestScore: row.score, rows: [row] })
     } else {
-      if (score > group.bestScore) group.bestScore = score
-      group.chunks.push(chunk)
+      if (row.score > group.bestScore) group.bestScore = row.score
+      group.rows.push(row)
     }
   }
 
-  // Sort groups by best score, take up to topK unique pages
   return [...pageGroups.values()]
     .sort((a, b) => b.bestScore - a.bestScore)
     .slice(0, topK)
-    .map(({ chunks }) => {
-      // Sort constituent chunks by chunk_index so combined text reads in order
-      const sorted = [...chunks].sort((a, b) => a.chunk_index - b.chunk_index)
+    .map(({ rows: groupRows }) => {
+      const sorted = [...groupRows].sort((a, b) => a.chunk_index - b.chunk_index)
       const first = sorted[0]
-      const combinedText = sorted.map(c => c.text).join('\n')
+      const combinedText = sorted.map(r => r.content).join('\n')
       return {
-        ...first,
-        text: combinedText,
+        topic: first.topic,
+        filename: first.filename,
+        page: first.page,
+        chunk_index: first.chunk_index,
+        char_offset: first.char_offset,
         textWithMeta:
           `[Subject: ${first.topic} | Source: ${first.filename} | Page ${first.page} | ChunkIdx: ${first.chunk_index} | CharOffset: ${first.char_offset}]\n` +
           combinedText,
@@ -150,95 +135,112 @@ function pdfPageCount(buf: Buffer): number {
 }
 
 // ── API routes ────────────────────────────────────────────────
-app.get('/api/documents', (_req, res) => {
-  res.json({ documents })
+
+app.get('/api/topics', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT topic FROM documents ORDER BY topic`
+    )
+    res.json({ topics: rows.map((r: { topic: string }) => r.topic) })
+  } catch (err) {
+    console.error('GET /api/topics error:', err)
+    res.status(500).json({ error: 'Failed to fetch topics' })
+  }
 })
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  const file = req.file
-  if (!file) {
-    res.status(400).json({ error: 'No file provided' })
-    return
+app.get('/api/documents', async (req, res) => {
+  try {
+    const { topic } = req.query
+    const { rows } = await pool.query(
+      topic
+        ? `SELECT id::text, name, topic, pages,
+                  uploaded_at AS "uploadedAt", status, ingested AS "injested"
+           FROM documents WHERE topic = $1 ORDER BY uploaded_at DESC`
+        : `SELECT id::text, name, topic, pages,
+                  uploaded_at AS "uploadedAt", status, ingested AS "injested"
+           FROM documents ORDER BY uploaded_at DESC`,
+      topic ? [topic] : []
+    )
+    res.json({ documents: rows })
+  } catch (err) {
+    console.error('GET /api/documents error:', err)
+    res.status(500).json({ error: 'Failed to fetch documents' })
   }
+})
 
-  const topic = (req.body.topic as string) || 'General'
-  const id = Date.now().toString()
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file
+    if (!file) { res.status(400).json({ error: 'No file provided' }); return }
 
-  let pages = 0
-  if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
-    try {
-      pages = pdfPageCount(fs.readFileSync(file.path))
-    } catch { /* leave as 0 */ }
+    const topic = (req.body.topic as string) || 'General'
+
+    let pages = 0
+    if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
+      try { pages = pdfPageCount(fs.readFileSync(file.path)) } catch { /* leave as 0 */ }
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO documents (name, file_path, topic, pages, status)
+       VALUES ($1, $2, $3, $4, 'processing')
+       RETURNING id::text, name, topic, pages,
+                 uploaded_at AS "uploadedAt", status, ingested AS "injested"`,
+      [file.originalname, file.path, topic, pages]
+    )
+
+    res.json({ document: rows[0] })
+  } catch (err) {
+    console.error('POST /api/upload error:', err)
+    res.status(500).json({ error: 'Upload failed' })
   }
-
-  const doc: StoredDoc = {
-    id,
-    name: file.originalname,
-    filePath: file.path,
-    topic,
-    pages,
-    uploadedAt: 'just now',
-    status: 'ready',
-    injested: false,
-  }
-
-  documents.unshift(doc)
-  res.json({ document: doc })
 })
 
 app.post('/api/injest', async (req, res) => {
   const { documentId } = req.body as { documentId: string }
-  console.log('Injest request for documentId:', documentId)
-  const allDocs = documents.map(d =>{
-    console.log('Document:', {
-      id: d.id,
-      name: d.name,
-      topic: d.topic
-    })
-  })
-  const doc = documents.find(d => d.id === documentId)
 
-  if (!doc) {
-    res.status(404).json({ error: 'Document not found' })
-    return
-  }
+  const { rows: docRows } = await pool.query(
+    `SELECT id, name, file_path, topic FROM documents WHERE id = $1`,
+    [documentId]
+  )
+  if (docRows.length === 0) { res.status(404).json({ error: 'Document not found' }); return }
+  const doc = docRows[0] as { id: number; name: string; file_path: string; topic: string }
 
-  doc.status = 'processing'
+  await pool.query(`UPDATE documents SET status = 'processing' WHERE id = $1`, [doc.id])
 
   try {
-    const buffer = fs.readFileSync(doc.filePath)
-    const pdf = await getDocumentProxy(new Uint8Array(buffer))
+    const buffer = fs.readFileSync(doc.file_path)
+    const pdf    = await getDocumentProxy(new Uint8Array(buffer))
     const { text } = await extractText(pdf, { mergePages: false })
 
-    const pages: string[] = Array.isArray(text) ? text : [text as string]
-    const chunks: Chunk[] = []
+    const pageTexts: string[] = Array.isArray(text) ? text : [text as string]
 
+    interface RawChunk {
+      topic: string; filename: string; page: number
+      chunk_index: number; char_offset: number; content: string
+      textWithMeta: string; embedding: number[]
+    }
+
+    const rawChunks: RawChunk[] = []
     let docCharOffset = 0
     let docChunkIndex = 0
 
-    pages.forEach((pageText, i) => {
+    pageTexts.forEach((pageText, i) => {
       const pageNum = i + 1
-      const rawChunks = chunkText(pageText)
+      const rawChunkTexts = chunkText(pageText)
       let searchFrom = 0
 
-      for (const raw of rawChunks) {
-        // Locate this chunk sequentially within the page text
-        const probe = raw.slice(0, Math.min(raw.length, 60))
-        const localIdx = pageText.indexOf(probe, searchFrom)
+      for (const raw of rawChunkTexts) {
+        const probe      = raw.slice(0, Math.min(raw.length, 60))
+        const localIdx   = pageText.indexOf(probe, searchFrom)
         const localOffset = localIdx >= 0 ? localIdx : searchFrom
         const char_offset = docCharOffset + localOffset
 
-        chunks.push({
-          docId: doc.id,
-          text: raw,
+        rawChunks.push({
+          topic: doc.topic, filename: doc.name, page: pageNum,
+          chunk_index: docChunkIndex, char_offset, content: raw,
           textWithMeta:
             `[Subject: ${doc.topic} | Source: ${doc.name} | Page ${pageNum} | ChunkIdx: ${docChunkIndex} | CharOffset: ${char_offset}]\n${raw}`,
           embedding: [],
-          page: pageNum,
-          topic: doc.topic,
-          filename: doc.name,
-          chunk_index: docChunkIndex,
-          char_offset,
         })
 
         searchFrom = localOffset + raw.length
@@ -248,29 +250,77 @@ app.post('/api/injest', async (req, res) => {
       docCharOffset += pageText.length
     })
 
-    const embeddings = await embedBatch(chunks.map(c => c.textWithMeta))
-    chunks.forEach((c, i) => { c.embedding = embeddings[i] })
+    const embeddings = await embedBatch(rawChunks.map(c => c.textWithMeta))
+    rawChunks.forEach((c, i) => { c.embedding = embeddings[i] })
 
-    chunkStore.set(doc.id, chunks)
-    doc.injested = true
-    doc.status = 'ready'
+    // Batch insert chunks in a transaction
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
 
-    res.json({ ok: true, chunks: chunks.length, chunksSample: chunks.slice(0, 3) })
+      const BATCH = 50
+      for (let i = 0; i < rawChunks.length; i += BATCH) {
+        const batch = rawChunks.slice(i, i + BATCH)
+        const values: unknown[] = []
+        const placeholders = batch.map((c, j) => {
+          const b = j * 8
+          values.push(
+            doc.id, c.topic, c.filename, c.page,
+            c.chunk_index, c.char_offset, c.content,
+            `[${c.embedding.join(',')}]`
+          )
+          return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8}::vector)`
+        })
+        await client.query(
+          `INSERT INTO chunks (doc_id, topic, filename, page, chunk_index, char_offset, content, embedding)
+           VALUES ${placeholders.join(',')}`,
+          values
+        )
+      }
+
+      await client.query(
+        `UPDATE documents SET status = 'ready', ingested = true WHERE id = $1`,
+        [doc.id]
+      )
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    res.json({ ok: true, chunks: rawChunks.length })
   } catch (err) {
-    doc.status = 'failed'
+    await pool.query(`UPDATE documents SET status = 'failed' WHERE id = $1`, [doc.id])
     console.error('Ingest error:', err)
     res.status(500).json({ error: 'Failed to ingest document' })
   }
 })
 
-app.post('/api/chat', async (req, res) => {
-  const { messages } = req.body as {
-    messages: { role: 'user' | 'assistant'; content: string }[]
+app.get('/api/messages', async (req, res) => {
+  try {
+    const { topic } = req.query
+    if (!topic || typeof topic !== 'string') {
+      res.status(400).json({ error: 'topic is required' }); return
+    }
+    const { rows } = await pool.query(
+      `SELECT id::text, role, content FROM messages
+       WHERE topic = $1 ORDER BY created_at ASC`,
+      [topic]
+    )
+    res.json({ messages: rows })
+  } catch (err) {
+    console.error('GET /api/messages error:', err)
+    res.status(500).json({ error: 'Failed to fetch messages' })
   }
+})
 
-  if (!Array.isArray(messages) || messages.length === 0) {
-    res.status(400).json({ error: 'messages array is required' })
-    return
+app.post('/api/chat', async (req, res) => {
+  const { message, topic } = req.body as { message: string; topic: string }
+
+  if (!message || !topic) {
+    res.status(400).json({ error: 'message and topic are required' }); return
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -279,8 +329,26 @@ app.post('/api/chat', async (req, res) => {
   res.flushHeaders()
 
   try {
-    const latestUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content ?? ''
-    const topChunks = await retrieveTopChunks(latestUserMessage)
+    // Load last 8 messages for topic context (oldest first for Claude)
+    const { rows: historyRows } = await pool.query<{ role: string; content: string }>(
+      `SELECT role, content FROM (
+         SELECT role, content, created_at FROM messages
+         WHERE topic = $1 ORDER BY created_at DESC LIMIT 8
+       ) sub ORDER BY created_at ASC`,
+      [topic]
+    )
+    const history = historyRows.map(r => ({
+      role: r.role as 'user' | 'assistant',
+      content: r.content,
+    }))
+
+    // Persist user message before calling Claude
+    await pool.query(
+      `INSERT INTO messages (topic, role, content) VALUES ($1, 'user', $2)`,
+      [topic, message]
+    )
+
+    const topChunks = await retrieveTopChunks(message, topic)
 
     const systemPrompt = topChunks.length === 0
       ? SYSTEM_PROMPT
@@ -293,22 +361,30 @@ app.post('/api/chat', async (req, res) => {
       max_tokens: 2048,
       stream: true,
       system: systemPrompt,
-      messages,
+      messages: [...history, { role: 'user', content: message }],
     })
 
+    let fullResponse = ''
     for await (const event of stream) {
-      if (
-        event.type === 'content_block_delta' &&
-        event.delta.type === 'text_delta'
-      ) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        fullResponse += event.delta.text
         res.write(`data: ${JSON.stringify(event.delta.text)}\n\n`)
       }
     }
 
+    // Strip SOURCES_JSON before saving (citations stored separately in a later phase)
+    const markerIdx    = fullResponse.lastIndexOf('SOURCES_JSON:')
+    const savedContent = markerIdx !== -1 ? fullResponse.slice(0, markerIdx).trim() : fullResponse
+
+    await pool.query(
+      `INSERT INTO messages (topic, role, content) VALUES ($1, 'assistant', $2)`,
+      [topic, savedContent]
+    )
+
     res.write('data: [DONE]\n\n')
     res.end()
   } catch (err) {
-    console.error('Anthropic stream error:', err)
+    console.error('Chat error:', err)
     res.write('data: [ERROR]\n\n')
     res.end()
   }
