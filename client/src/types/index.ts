@@ -5,7 +5,7 @@ export type DocStatus = 'ready' | 'processing' | 'indexing' | 'failed'
 export interface Document {
   id: string
   name: string
-  topic: string
+  subject: string
   pages: number
   uploadedAt: string
   status: DocStatus

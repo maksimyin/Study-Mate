@@ -266,7 +266,7 @@ export default function DocumentPanel({ topics, activeTopic, onTopicChange, onAd
 
                 <div className="file-info">
                   <div className="file-name">{doc.name}</div>
-                  <div className="file-meta">{doc.topic} · {doc.pages}p · {doc.uploadedAt}</div>
+                  <div className="file-meta">{doc.subject} · {doc.pages}p · {doc.uploadedAt}</div>
                   {(doc.status === 'processing' || doc.status === 'indexing') && <ProcessingBar />}
                 </div>
 

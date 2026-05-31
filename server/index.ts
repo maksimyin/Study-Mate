@@ -25,7 +25,7 @@ const SYSTEM_PROMPT =
   'SOURCES_JSON:[{"id":"1","filename":"file.pdf","page":3,"chunk_index":4,"char_offset":1820},{"id":"2","filename":"other.pdf","page":7,"chunk_index":11,"char_offset":5340}]\n' +
   'Copy chunk_index and char_offset exactly as they appear in the context metadata headers. ' +
   'Only include sources that were actually cited. Omit the SOURCES_JSON line entirely if no context was used. ' +
-  'If the context does not cover the question, answer from general knowledge and say so.'
+  'If the context does not cover the question, answer from general knowledge and EXPLICITLY say so.'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -43,27 +43,27 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
 }
 
 interface RetrievedChunk {
-  topic: string; filename: string; page: number
+  subject: string; filename: string; page: number
   chunk_index: number; char_offset: number; textWithMeta: string
 }
 
-async function retrieveTopChunks(query: string, topic: string, topK = 5, fetchK = 20): Promise<RetrievedChunk[]> {
+async function retrieveTopChunks(query: string, subject: string, topK = 5, fetchK = 20): Promise<RetrievedChunk[]> {
   const [queryEmbedding] = await embedBatch([query])
   const vec = `[${queryEmbedding.join(',')}]`
 
   type Row = {
-    doc_id: string; topic: string; filename: string
+    doc_id: string; subject: string; filename: string
     page: number; chunk_index: number; char_offset: number; content: string; score: number
   }
 
   const { rows } = await pool.query<Row>(
-    `SELECT doc_id::text, topic, filename, page, chunk_index, char_offset, content,
+    `SELECT doc_id::text, subject, filename, page, chunk_index, char_offset, content,
             1 - (embedding <=> $2::vector) AS score
      FROM chunks
-     WHERE topic = $1
+     WHERE subject = $1
      ORDER BY embedding <=> $2::vector
      LIMIT $3`,
-    [topic, vec, fetchK]
+    [subject, vec, fetchK]
   )
 
   if (rows.length === 0) return []
@@ -89,16 +89,79 @@ async function retrieveTopChunks(query: string, topic: string, topK = 5, fetchK 
       const first = sorted[0]
       const combinedText = sorted.map(r => r.content).join('\n')
       return {
-        topic: first.topic,
+        subject: first.subject,
         filename: first.filename,
         page: first.page,
         chunk_index: first.chunk_index,
         char_offset: first.char_offset,
         textWithMeta:
-          `[Subject: ${first.topic} | Source: ${first.filename} | Page ${first.page} | ChunkIdx: ${first.chunk_index} | CharOffset: ${first.char_offset}]\n` +
+          `[Subject: ${first.subject} | Source: ${first.filename} | Page ${first.page} | ChunkIdx: ${first.chunk_index} | CharOffset: ${first.char_offset}]\n` +
           combinedText,
       }
     })
+}
+
+// ── Progress classification ───────────────────────────────────
+
+interface ClassificationResult {
+  subtopic: string
+  concept: string
+  questionType: string
+  cognitiveLevel: string | null
+  confidenceSignal: string
+}
+
+const CLASSIFICATION_PROMPT =
+  'You are a study session classifier. Given a student\'s message and recent conversation history, extract structured metadata.\n\n' +
+  'Return ONLY valid JSON, no other text, no reasoning, no explanation:\n' +
+  '{\n' +
+  '  "subtopic": string,\n' +
+  '  "concept": string,\n' +
+  '  "questionType": "factual" | "conceptual" | "procedural" | "application" | "comparative" | "clarification" | "follow_up" | "acknowledgment",\n' +
+  '  "cognitiveLevel": "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create" | null,\n' +
+  '  "confidenceSignal": "high" | "medium" | "low"\n' +
+  '}\n\n' +
+  'Rules:\n' +
+  '- subtopic: sub-area within the subject (e.g. "Cell Division", "Gas Laws")\n' +
+  '- concept: specific concept being asked about (e.g. "Crossing Over", "Van der Waals Equation")\n' +
+  '- follow_up: continuing directly from the previous exchange on the same concept\n' +
+  '- clarification: asking for re-explanation of something just covered\n' +
+  '- acknowledgment: affirmation or confirmation with no new question ("got it", "ok thanks", "that makes sense")\n' +
+  '- comparative: comparing or judging between two options ("which is better", "what\'s the difference")\n' +
+  '- cognitiveLevel follows Bloom\'s taxonomy — set to null when questionType is acknowledgment\n' +
+  '- confidenceSignal: high = affirmation/understanding expressed; low = confusion, frustration, or hedging ("I think...?", "I don\'t get it"); medium = neutral question'
+
+async function classifyMessage(
+  subject: string,
+  userMessage: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<ClassificationResult | null> {
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 256,
+      system: CLASSIFICATION_PROMPT,
+      messages: [
+        ...history,
+        {
+          role: 'user',
+          content: `The student is studying: ${subject}\n\nClassify this message:\n"${userMessage}"`,
+        },
+      ],
+    })
+    const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    // Extract just the JSON object — handles code fences and trailing reasoning text
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (!match) {
+      console.error('[classify] no JSON found in response:', raw)
+      return null
+    }
+    console.log('[classify] result:', match[0])
+    return JSON.parse(match[0]) as ClassificationResult
+  } catch (err) {
+    console.error('[classify] failed:', err)
+    return null
+  }
 }
 
 function chunkText(text: string, maxChars = 1000): string[] {
@@ -139,9 +202,9 @@ function pdfPageCount(buf: Buffer): number {
 app.get('/api/topics', async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT DISTINCT topic FROM documents ORDER BY topic`
+      `SELECT DISTINCT subject FROM documents ORDER BY subject`
     )
-    res.json({ topics: rows.map((r: { topic: string }) => r.topic) })
+    res.json({ topics: rows.map((r: { subject: string }) => r.subject) })
   } catch (err) {
     console.error('GET /api/topics error:', err)
     res.status(500).json({ error: 'Failed to fetch topics' })
@@ -153,10 +216,10 @@ app.get('/api/documents', async (req, res) => {
     const { topic } = req.query
     const { rows } = await pool.query(
       topic
-        ? `SELECT id::text, name, topic, pages,
+        ? `SELECT id::text, name, subject, pages,
                   uploaded_at AS "uploadedAt", status, ingested AS "injested"
-           FROM documents WHERE topic = $1 ORDER BY uploaded_at DESC`
-        : `SELECT id::text, name, topic, pages,
+           FROM documents WHERE subject = $1 ORDER BY uploaded_at DESC`
+        : `SELECT id::text, name, subject, pages,
                   uploaded_at AS "uploadedAt", status, ingested AS "injested"
            FROM documents ORDER BY uploaded_at DESC`,
       topic ? [topic] : []
@@ -173,7 +236,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const file = req.file
     if (!file) { res.status(400).json({ error: 'No file provided' }); return }
 
-    const topic = (req.body.topic as string) || 'General'
+    const subject = (req.body.topic as string) || 'General'
 
     let pages = 0
     if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
@@ -181,11 +244,11 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO documents (name, file_path, topic, pages, status)
+      `INSERT INTO documents (name, file_path, subject, pages, status)
        VALUES ($1, $2, $3, $4, 'processing')
-       RETURNING id::text, name, topic, pages,
+       RETURNING id::text, name, subject, pages,
                  uploaded_at AS "uploadedAt", status, ingested AS "injested"`,
-      [file.originalname, file.path, topic, pages]
+      [file.originalname, file.path, subject, pages]
     )
 
     res.json({ document: rows[0] })
@@ -199,11 +262,11 @@ app.post('/api/injest', async (req, res) => {
   const { documentId } = req.body as { documentId: string }
 
   const { rows: docRows } = await pool.query(
-    `SELECT id, name, file_path, topic FROM documents WHERE id = $1`,
+    `SELECT id, name, file_path, subject FROM documents WHERE id = $1`,
     [documentId]
   )
   if (docRows.length === 0) { res.status(404).json({ error: 'Document not found' }); return }
-  const doc = docRows[0] as { id: number; name: string; file_path: string; topic: string }
+  const doc = docRows[0] as { id: number; name: string; file_path: string; subject: string }
 
   await pool.query(`UPDATE documents SET status = 'processing' WHERE id = $1`, [doc.id])
 
@@ -215,7 +278,7 @@ app.post('/api/injest', async (req, res) => {
     const pageTexts: string[] = Array.isArray(text) ? text : [text as string]
 
     interface RawChunk {
-      topic: string; filename: string; page: number
+      subject: string; filename: string; page: number
       chunk_index: number; char_offset: number; content: string
       textWithMeta: string; embedding: number[]
     }
@@ -236,10 +299,10 @@ app.post('/api/injest', async (req, res) => {
         const char_offset = docCharOffset + localOffset
 
         rawChunks.push({
-          topic: doc.topic, filename: doc.name, page: pageNum,
+          subject: doc.subject, filename: doc.name, page: pageNum,
           chunk_index: docChunkIndex, char_offset, content: raw,
           textWithMeta:
-            `[Subject: ${doc.topic} | Source: ${doc.name} | Page ${pageNum} | ChunkIdx: ${docChunkIndex} | CharOffset: ${char_offset}]\n${raw}`,
+            `[Subject: ${doc.subject} | Source: ${doc.name} | Page ${pageNum} | ChunkIdx: ${docChunkIndex} | CharOffset: ${char_offset}]\n${raw}`,
           embedding: [],
         })
 
@@ -265,14 +328,14 @@ app.post('/api/injest', async (req, res) => {
         const placeholders = batch.map((c, j) => {
           const b = j * 8
           values.push(
-            doc.id, c.topic, c.filename, c.page,
+            doc.id, c.subject, c.filename, c.page,
             c.chunk_index, c.char_offset, c.content,
             `[${c.embedding.join(',')}]`
           )
           return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8}::vector)`
         })
         await client.query(
-          `INSERT INTO chunks (doc_id, topic, filename, page, chunk_index, char_offset, content, embedding)
+          `INSERT INTO chunks (doc_id, subject, filename, page, chunk_index, char_offset, content, embedding)
            VALUES ${placeholders.join(',')}`,
           values
         )
@@ -306,7 +369,7 @@ app.get('/api/messages', async (req, res) => {
     }
     const { rows } = await pool.query(
       `SELECT id::text, role, content FROM messages
-       WHERE topic = $1 ORDER BY created_at ASC`,
+       WHERE subject = $1 ORDER BY created_at ASC`,
       [topic]
     )
     res.json({ messages: rows })
@@ -333,7 +396,7 @@ app.post('/api/chat', async (req, res) => {
     const { rows: historyRows } = await pool.query<{ role: string; content: string }>(
       `SELECT role, content FROM (
          SELECT role, content, created_at FROM messages
-         WHERE topic = $1 ORDER BY created_at DESC LIMIT 8
+         WHERE subject = $1 ORDER BY created_at DESC LIMIT 8
        ) sub ORDER BY created_at ASC`,
       [topic]
     )
@@ -343,10 +406,14 @@ app.post('/api/chat', async (req, res) => {
     }))
 
     // Persist user message before calling Claude
-    await pool.query(
-      `INSERT INTO messages (topic, role, content) VALUES ($1, 'user', $2)`,
+    const { rows: msgRows } = await pool.query<{ id: number }>(
+      `INSERT INTO messages (subject, role, content) VALUES ($1, 'user', $2) RETURNING id`,
       [topic, message]
     )
+    const messageId = msgRows[0].id
+
+    // Start classification concurrently — will be awaited after streaming
+    const classificationPromise = classifyMessage(topic, message, history)
 
     const topChunks = await retrieveTopChunks(message, topic)
 
@@ -372,14 +439,31 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // Strip SOURCES_JSON before saving (citations stored separately in a later phase)
+    // Strip SOURCES_JSON before saving
     const markerIdx    = fullResponse.lastIndexOf('SOURCES_JSON:')
     const savedContent = markerIdx !== -1 ? fullResponse.slice(0, markerIdx).trim() : fullResponse
 
-    await pool.query(
-      `INSERT INTO messages (topic, role, content) VALUES ($1, 'assistant', $2)`,
-      [topic, savedContent]
+    // Classification is almost certainly done by now; await to get subtopic for both rows
+    const classification = await classificationPromise
+
+    const { rows: assistantRows } = await pool.query<{ id: number }>(
+      `INSERT INTO messages (subject, role, content, subtopic) VALUES ($1, 'assistant', $2, $3) RETURNING id`,
+      [topic, savedContent, classification?.subtopic ?? null]
     )
+
+    if (classification) {
+      await Promise.all([
+        pool.query(
+          `UPDATE messages SET subtopic = $1 WHERE id = $2`,
+          [classification.subtopic, messageId]
+        ),
+        pool.query(
+          `INSERT INTO progress_events (message_id, subject, subtopic, concept, question_type, cognitive_level, confidence_signal)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [messageId, topic, classification.subtopic, classification.concept, classification.questionType, classification.cognitiveLevel ?? null, classification.confidenceSignal]
+        ),
+      ])
+    }
 
     res.write('data: [DONE]\n\n')
     res.end()
