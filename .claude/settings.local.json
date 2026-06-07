@@ -18,7 +18,9 @@
       "Bash(echo \"Hello world test content\")",
       "Bash(curl -s -X POST http://localhost:3001/api/upload -F 'topic=AP Bio' -F 'file=@C:/Users/yinma/test.txt;type=text/plain')",
       "Bash(echo \"Exit: $?\")",
-      "Bash(curl -v -X POST http://localhost:3001/api/documents)"
+      "Bash(curl -v -X POST http://localhost:3001/api/documents)",
+      "mcp__supabase__execute_sql",
+      "PowerShell(npm install *)"
     ]
   },
   "enableAllProjectMcpServers": true,
