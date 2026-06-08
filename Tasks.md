@@ -7,6 +7,6 @@
 - [x] Phase 4 — Retrieval + Citations
 - [x] Phase 5 — Conversation Persistence
 - [x] Phase 6 — Progress Classification
-- [ ] Phase 7 — Progress Dashboard
+- [x] Phase 7 — Progress Dashboard
 - [ ] Phase 8 — Polish + Error Handling
  

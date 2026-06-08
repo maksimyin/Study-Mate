@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS progress_events
   created_at       timestamp with time zone DEFAULT now()
 );
 
+
+
 -- ── Primary Keys ──────────────────────────────────────────────────────────────
 
 ALTER TABLE documents       ADD CONSTRAINT documents_pkey       PRIMARY KEY (id);

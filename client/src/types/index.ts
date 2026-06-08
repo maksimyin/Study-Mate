@@ -1,5 +1,36 @@
 export type View = 'study' | 'progress'
 
+export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create'
+
+export interface ConceptActivity {
+  subtopic: string
+  askCount: number
+  lastAskedAt: string
+  dominantCognitiveLevel: BloomLevel | null
+  recencyScore: number
+}
+
+export interface WeakSpot {
+  subtopic: string
+  askCount: number
+  confusionRate: number
+  weaknessScore: number
+  dominantCognitiveLevel: BloomLevel | null
+}
+
+export interface ProgressData {
+  summary: {
+    totalAsksThisWeek: number
+    totalEvents: number
+    weakSpotCount: number
+    avgCognitiveLevel: BloomLevel
+  }
+  topicActivity: ConceptActivity[]
+  weakSpots: WeakSpot[]
+  cognitiveDistribution: Record<BloomLevel, number>
+  dailyCounts: Array<{ day: string; count: number }>
+}
+
 export type DocStatus = 'ready' | 'processing' | 'indexing' | 'failed'
 
 export interface Document {

@@ -103,7 +103,7 @@ function TopicDropdown({
             </button>
           ))}
 
-          <div className="topic-dropdown-divider" />
+          {topics.length > 0 && <div className="topic-dropdown-divider" />}
 
           {isAdding ? (
             <div className="topic-new-row">
@@ -146,6 +146,12 @@ export default function DocumentPanel({ topics, activeTopic, onTopicChange, onAd
   const prevRef     = useRef<Document[]>(docs)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const handleAddTopicAndUpload = (name: string) => {
+    onAddTopic(name)
+    // Brief delay lets React commit the activeTopic state before the file picker opens
+    setTimeout(() => fileInputRef.current?.click(), 120)
+  }
+
   useEffect(() => {
     const prev    = prevRef.current
     const prevIds = new Set(prev.map(d => d.id))
@@ -165,9 +171,12 @@ export default function DocumentPanel({ topics, activeTopic, onTopicChange, onAd
     prevRef.current = docs
   }, [docs])
 
+  const canUpload = activeTopic !== ''
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
+    if (!canUpload) return
     const f = e.dataTransfer.files[0]
     if (f) onUpload(f)
   }
@@ -203,17 +212,17 @@ export default function DocumentPanel({ topics, activeTopic, onTopicChange, onAd
           topics={topics}
           activeTopic={activeTopic}
           onTopicChange={onTopicChange}
-          onAddTopic={onAddTopic}
+          onAddTopic={handleAddTopicAndUpload}
         />
       </div>
 
       {/* Upload zone */}
       <div
-        onClick={() => fileInputRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
+        onClick={() => { if (canUpload) fileInputRef.current?.click() }}
+        onDragOver={e => { e.preventDefault(); if (canUpload) setIsDragOver(true) }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
-        className={`upload-zone${isDragOver ? ' drag-over' : ''}`}
+        className={`upload-zone${isDragOver ? ' drag-over' : ''}${!canUpload ? ' upload-zone-disabled' : ''}`}
       >
         <div className="upload-icon-wrap">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -232,9 +241,17 @@ export default function DocumentPanel({ topics, activeTopic, onTopicChange, onAd
 
         <div>
           <p className="upload-label">
-            {isDragOver ? 'Release to upload' : 'Drop files or click to browse'}
+            {!canUpload
+              ? 'Create a topic first'
+              : isDragOver ? 'Release to upload' : 'Drop files or click to browse'}
           </p>
-          <p className="upload-hint">Tagged to {activeTopic || 'active topic'} · 1 GB max</p>
+          {canUpload ? (
+            docs.length === 0
+              ? <p className="upload-hint upload-hint-warn">Upload a document to save this topic</p>
+              : <p className="upload-hint">Tagged to {activeTopic} · 1 GB max</p>
+          ) : (
+            <p className="upload-hint">Use "+ New topic" above to get started</p>
+          )}
         </div>
 
         <div className="upload-ext-row">

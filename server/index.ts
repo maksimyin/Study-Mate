@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import {getDocumentProxy, extractText} from 'unpdf'
 import pool from './db'
+import { getProgressData } from './progressQueries'
 
 const app = express()
 const PORT = process.env.PORT ?? 3001
@@ -134,9 +135,14 @@ const CLASSIFICATION_PROMPT =
 async function classifyMessage(
   subject: string,
   userMessage: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  existingSubtopics: string[] = []
 ): Promise<ClassificationResult | null> {
   try {
+    const subtopicGuidance = existingSubtopics.length > 0
+      ? `\nExisting subtopics for this subject: ${existingSubtopics.join(', ')}\nPrefer one of these; only introduce a new subtopic if the question is clearly about a different area not covered by any of them.`
+      : ''
+
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 256,
@@ -145,7 +151,7 @@ async function classifyMessage(
         ...history,
         {
           role: 'user',
-          content: `The student is studying: ${subject}\n\nClassify this message:\n"${userMessage}"`,
+          content: `The student is studying: ${subject}${subtopicGuidance}\n\nClassify this message:\n"${userMessage}"`,
         },
       ],
     })
@@ -236,7 +242,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const file = req.file
     if (!file) { res.status(400).json({ error: 'No file provided' }); return }
 
-    const subject = (req.body.topic as string) || 'General'
+    const subject = (req.body.topic as string)?.trim()
+    if (!subject) { res.status(400).json({ error: 'topic is required' }); return }
 
     let pages = 0
     if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
@@ -353,6 +360,32 @@ app.post('/api/injest', async (req, res) => {
       client.release()
     }
 
+    // Extract canonical subtopics from document text (best-effort, non-blocking)
+    try {
+      const textSample = pageTexts.slice(0, 4).join('\n').slice(0, 3000)
+      const subRes = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 150,
+        system: 'You are a document analyzer. Extract the 5 most important subtopic headings from this academic text. Return ONLY a JSON array of strings with no other text: ["Subtopic 1", "Subtopic 2", "Subtopic 3", "Subtopic 4", "Subtopic 5"]. Be concise and specific.',
+        messages: [{ role: 'user', content: textSample }],
+      })
+      const raw = subRes.content[0].type === 'text' ? subRes.content[0].text : '[]'
+      const match = raw.match(/\[[\s\S]*\]/)
+      if (match) {
+        const subtopics: string[] = JSON.parse(match[0])
+        if (subtopics.length > 0) {
+          const vals = subtopics.map((_: string, i: number) => `($1, $2, $${i + 3})`).join(',')
+          await pool.query(
+            `INSERT INTO document_subtopics (doc_id, subject, name) VALUES ${vals}`,
+            [doc.id, doc.subject, ...subtopics]
+          )
+          console.log(`[ingest] extracted ${subtopics.length} subtopics for "${doc.subject}":`, subtopics)
+        }
+      }
+    } catch (subErr) {
+      console.error('[ingest] subtopic extraction failed (non-fatal):', subErr)
+    }
+
     res.json({ ok: true, chunks: rawChunks.length })
   } catch (err) {
     await pool.query(`UPDATE documents SET status = 'failed' WHERE id = $1`, [doc.id])
@@ -412,8 +445,15 @@ app.post('/api/chat', async (req, res) => {
     )
     const messageId = msgRows[0].id
 
+    // Fetch canonical subtopics for this subject to anchor classification
+    const { rows: subRows } = await pool.query<{ name: string }>(
+      `SELECT DISTINCT name FROM document_subtopics WHERE subject = $1`,
+      [topic]
+    )
+    const existingSubtopics = subRows.map(r => r.name)
+
     // Start classification concurrently — will be awaited after streaming
-    const classificationPromise = classifyMessage(topic, message, history)
+    const classificationPromise = classifyMessage(topic, message, history, existingSubtopics)
 
     const topChunks = await retrieveTopChunks(message, topic)
 
@@ -471,6 +511,17 @@ app.post('/api/chat', async (req, res) => {
     console.error('Chat error:', err)
     res.write('data: [ERROR]\n\n')
     res.end()
+  }
+})
+
+app.get('/api/progress', async (req, res) => {
+  try {
+    const topic = typeof req.query.topic === 'string' ? req.query.topic : undefined
+    const data  = await getProgressData(topic)
+    res.json(data)
+  } catch (err) {
+    console.error('GET /api/progress error:', err)
+    res.status(500).json({ error: 'Failed to fetch progress data' })
   }
 })
 

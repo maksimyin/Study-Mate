@@ -1,9 +1,8 @@
 ## Project
 StudyMate — AI study assistant. Next.js app router, TypeScript, Tailwind only (no component libs).
 
-## Current phase: 4 — Retrieval + Citations
-Previously completed: Phase 1 (shell), Phase 2 (upload pipeline), Phase 3 (chat, no RAG)
-Next: Phase 5 (Postgres persistence)
+## Current phase: 7
+persistance is complete
 
 ## Commands
 npm run dev        # localhost:3000
@@ -18,32 +17,6 @@ Split screen on /study:
 
 ## Architecture
 
-### Chunk schema (Phase 4 source of truth)
-{
-  id: string,            // crypto.randomUUID()
-  documentId: string,
-  text: string,
-  pageNumber: number,
-  chunkIndex: number,
-  embedding: number[]    // 1536-dim, text-embedding-3-small
-}
-
-### In-memory store 
-Replace module-level Map<documentId, Chunk[]> in lib/store.ts with pgvector PostgresSQL database 
-Embedded chunks should be stored in pgvector
-
-### Embedding model
-OpenAI text-embedding-3-small. Batch chunks in a single embeddings API call.
-Do NOT use text-embedding-ada-002.
-
-### Retrieval
-Use pgvectors cosine query function
-Return top 5 chunks. Pass to Claude in proper JSON format with appropraite citations.
-
-
-## API routes (Phase 4 additions)
-POST /api/ingest     — extract text (unpdf), chunk, embed, store
-POST /api/chat       — embed query, retrieve top-5 chunks, call Claude with context
 
 ## Rules
 - 'use client' only on components that need it (chip toggles, input state)

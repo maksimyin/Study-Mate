@@ -15,13 +15,11 @@ export default function StudyView() {
     fetch('/api/topics')
       .then(r => r.json())
       .then((data: { topics: string[] }) => {
-        const loaded = data.topics.length > 0 ? data.topics : ['General']
-        setTopics(loaded)
-        setActiveTopic(prev => prev || loaded[0])
+        setTopics(data.topics)
+        setActiveTopic(prev => prev || data.topics[0] || '')
       })
       .catch(() => {
-        setTopics(['General'])
-        setActiveTopic(prev => prev || 'General')
+        // leave topics empty — UI will show "create a topic" state
       })
   }, [])
 
@@ -55,7 +53,7 @@ export default function StudyView() {
     setDocs(prev => [{
       id: tempId,
       name: file.name,
-      topic: activeTopic,
+      subject: activeTopic,
       pages: 0,
       uploadedAt: 'just now',
       status: 'processing',

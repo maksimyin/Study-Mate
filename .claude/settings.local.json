@@ -20,7 +20,8 @@
       "Bash(echo \"Exit: $?\")",
       "Bash(curl -v -X POST http://localhost:3001/api/documents)",
       "mcp__supabase__execute_sql",
-      "PowerShell(npm install *)"
+      "PowerShell(npm install *)",
+      "mcp__supabase__apply_migration"
     ]
   },
   "enableAllProjectMcpServers": true,
