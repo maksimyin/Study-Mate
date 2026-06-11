@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface Props {
   dailyCounts: Array<{ day: string; count: number }>
@@ -17,11 +18,11 @@ function ordinal(n: number): string {
 }
 
 function countToColor(n: number): string {
-  if (n === 0)  return '#242424'
-  if (n <= 3)   return 'rgba(110,231,183,0.18)'
-  if (n <= 7)   return 'rgba(110,231,183,0.38)'
-  if (n <= 12)  return 'rgba(110,231,183,0.62)'
-  return 'rgba(110,231,183,0.88)'
+  if (n === 0)  return '#E8E6E0'
+  if (n <= 3)   return '#6EE7B7'
+  if (n <= 7)   return '#34D399'
+  if (n <= 12)  return '#10B981'
+  return '#059669'
 }
 
 function formatLabel(dateStr: string, count: number): string {
@@ -66,7 +67,10 @@ export default function ActivityHeatmap({ dailyCounts }: Props) {
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today)
     d.setDate(today.getDate() - i)
-    dayList.push(d.toISOString().slice(0, 10))
+    const yyyy = d.getFullYear()
+    const mm   = String(d.getMonth() + 1).padStart(2, '0')
+    const dd   = String(d.getDate()).padStart(2, '0')
+    dayList.push(`${yyyy}-${mm}-${dd}`)
   }
 
   const countMap = new Map(dailyCounts.map(d => [d.day, d.count]))
@@ -84,13 +88,7 @@ export default function ActivityHeatmap({ dailyCounts }: Props) {
     }
   })
 
-  const LEGEND_COLORS = [
-    '#242424',
-    'rgba(110,231,183,0.18)',
-    'rgba(110,231,183,0.38)',
-    'rgba(110,231,183,0.62)',
-    'rgba(110,231,183,0.88)',
-  ]
+  const LEGEND_COLORS = ['#E8E6E0', '#6EE7B7', '#34D399', '#10B981', '#059669']
 
   return (
     <div className="heatmap-section">
@@ -107,13 +105,18 @@ export default function ActivityHeatmap({ dailyCounts }: Props) {
           </span>
         ))}
         <div className="heatmap-row">
-          {dayList.map(day => {
+          {dayList.map((day, i) => {
             const count = countMap.get(day) ?? 0
             return (
               <div
                 key={day}
                 className="heatmap-cell"
-                style={{ width: cellSize, height: cellSize, background: countToColor(count) }}
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  background: countToColor(count),
+                  animationDelay: `${i * 8}ms`,
+                }}
                 onMouseEnter={e => {
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
                   setTooltip({ x: rect.left + rect.width / 2, y: rect.top, text: formatLabel(day, count) })
@@ -133,10 +136,13 @@ export default function ActivityHeatmap({ dailyCounts }: Props) {
         <span className="heatmap-legend-text">More</span>
       </div>
 
-      {tooltip && (
+      {/* Portaled to <body>: the section's backdrop-filter makes it the
+          containing block for position:fixed, which threw the tooltip off */}
+      {tooltip && createPortal(
         <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y - 38 }}>
           {tooltip.text}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

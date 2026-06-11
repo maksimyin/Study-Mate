@@ -26,50 +26,14 @@ Split screen on /study:
 - No inline styles
 - Do not re-embed a document if chunks already exist for that documentId
 
-## Style direction
+
  
-Dark, monochromatic, AI-native. Reference: Perplexity dark mode.
-Bold contrast — white on near-black — not muted or gray-washed.
- 
-### Color palette
-- **Background**: `#0f0f0f` — true near-black, no blue tint
-- **Surface (left panel)**: `#171717` — just barely lifted from bg
-- **Surface (inputs, cards)**: `#1c1c1c`
-- **Border**: `rgba(255,255,255,0.06)` — barely visible, not heavy
-- **Text primary**: `#f5f5f5` — near-white, bold and legible
-- **Text secondary**: `#888888` — mid-gray for metadata, labels
-- **Text muted**: `#555555` — timestamps, hints, disabled
-- **Accent**: `#ffffff` — pure white for active states, selected chips, send button. No color accent.
-- **Status ready**: `#3ecf8e` — green, small badge only
-- **Status processing/uploading**: `#f5a623` — amber, small badge only
-- **Citation chips**: `#1c1c1c` bg, `rgba(255,255,255,0.12)` border, `font-mono`
-- Slight accent on the active topic chip `#6EE7B7`
 
 # Type System
 
 **Font:** Plus Jakarta Sans (all uses)
 
----
 
-## Scale
-
-| Role | Size | Weight | Letter Spacing | Line Height | Color |
-|---|---|---|---|---|---|
-| Display | 40px | 700 | -0.02em | 1.1 | primary |
-| H1 | 28px | 700 | -0.015em | 1.2 | primary |
-| H2 | 22px | 600 | -0.01em | 1.25 | primary |
-| H3 | 17px | 600 | 0 | 1.3 | primary |
-| H4 | 14px | 600 | 0 | 1.4 | primary |
-| Body | 15px | 400 | 0 | 1.7 | primary |
-| Body SM | 13px | 400 | 0 | 1.6 | secondary |
-| Button (lg) | 14px | 600 | 0 | — | — |
-| Button (sm) | 13px | 500 | 0 | — | — |
-| Tab / Nav | 13px | 500 | 0 | — | secondary → primary (active) |
-| Tag / Badge | 12px | 500 | 0 | — | secondary |
-| Caption / Meta | 12px | 400 | 0 | 1.5 | tertiary |
-| Overline | 11px | 600 | 0.1em | — | secondary, uppercase |
-
----
 
 ## Rules
 

@@ -1,32 +1,59 @@
 import 'dotenv/config'
 import express from 'express'
 import path from 'path'
+import helmet from 'helmet'
 import fs from 'fs'
 import multer from 'multer'
+import rateLimit from 'express-rate-limit'
+import { randomUUID } from 'crypto'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import {getDocumentProxy, extractText} from 'unpdf'
-import pool from './db'
-import { getProgressData } from './progressQueries'
+import pool from './db.js'
+import { getProgressData } from './progressQueries.js'
 
 const app = express()
+app.use(helmet())
 const PORT = process.env.PORT ?? 3001
 
-app.use(express.json())
+
+app.set('trust proxy', 1)
+
+app.use(express.json({ limit: '256kb' }))
+
+
+const chatLimiter = rateLimit({
+  windowMs: 24*60*60*1000, 
+  max: 50,           
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Daily chat limit reached. Please try again tomorrow.' },
+})
+const uploadLimiter = rateLimit({
+  windowMs: 24*60*60*1000,
+  max: 20,            
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Daily upload limit reached. Please try again tomorrow.' },
+})
+
+const MAX_MESSAGE_LEN = 8000  
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY })
 const openai    = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 const SYSTEM_PROMPT =
   'You are StudyMate, an AI study assistant. Help students understand their study materials clearly and concisely using the information provided. ' +
-  'Break down complex concepts, use examples where helpful, and be direct. ' +
+  'Break down complex concepts, use examples where helpful, and be direct and concise. ' +
   'Use markdown to structure responses: ## for section headers, **bold** for key terms, bullet points or numbered lists for sequences, and tables for comparisons. ' +
   'When context is provided, answer from it. After relevant statements, place a numbered inline citation like [1] or [2]. ' +
   'At the very end of your response, on its own line with no other text, output the citations as JSON in exactly this format:\n' +
   'SOURCES_JSON:[{"id":"1","filename":"file.pdf","page":3,"chunk_index":4,"char_offset":1820},{"id":"2","filename":"other.pdf","page":7,"chunk_index":11,"char_offset":5340}]\n' +
   'Copy chunk_index and char_offset exactly as they appear in the context metadata headers. ' +
   'Only include sources that were actually cited. Omit the SOURCES_JSON line entirely if no context was used. ' +
-  'If the context does not cover the question, answer from general knowledge and EXPLICITLY say so.'
+  'If the context does not cover the question, answer from general knowledge and EXPLICITLY say so.' +
+  'Limit your use of emojis to only when they are necessary for the explanation.' +
+  'Do not repeat the same response multiple times'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -48,7 +75,9 @@ interface RetrievedChunk {
   chunk_index: number; char_offset: number; textWithMeta: string
 }
 
-async function retrieveTopChunks(query: string, subject: string, topK = 5, fetchK = 20): Promise<RetrievedChunk[]> {
+async function retrieveTopChunks(
+  query: string, subject: string, excludedDocIds: string[] = [], topK = 5, fetchK = 20
+): Promise<RetrievedChunk[]> {
   const [queryEmbedding] = await embedBatch([query])
   const vec = `[${queryEmbedding.join(',')}]`
 
@@ -61,10 +90,10 @@ async function retrieveTopChunks(query: string, subject: string, topK = 5, fetch
     `SELECT doc_id::text, subject, filename, page, chunk_index, char_offset, content,
             1 - (embedding <=> $2::vector) AS score
      FROM chunks
-     WHERE subject = $1
+     WHERE subject = $1 AND NOT (doc_id = ANY($4::bigint[]))
      ORDER BY embedding <=> $2::vector
      LIMIT $3`,
-    [subject, vec, fetchK]
+    [subject, vec, fetchK, excludedDocIds]
   )
 
   if (rows.length === 0) return []
@@ -130,7 +159,8 @@ const CLASSIFICATION_PROMPT =
   '- acknowledgment: affirmation or confirmation with no new question ("got it", "ok thanks", "that makes sense")\n' +
   '- comparative: comparing or judging between two options ("which is better", "what\'s the difference")\n' +
   '- cognitiveLevel follows Bloom\'s taxonomy — set to null when questionType is acknowledgment\n' +
-  '- confidenceSignal: high = affirmation/understanding expressed; low = confusion, frustration, or hedging ("I think...?", "I don\'t get it"); medium = neutral question'
+  '- confidenceSignal: high = affirmation/understanding expressed; low = confusion, frustration, or hedging ("I think...?", "I don\'t get it"); medium = neutral question\n' +
+  '- subtopic and concept must ALWAYS be non-empty strings, never null — for vague or off-topic messages use a broad label like "General Review"'
 
 async function classifyMessage(
   subject: string,
@@ -163,7 +193,15 @@ async function classifyMessage(
       return null
     }
     console.log('[classify] result:', match[0])
-    return JSON.parse(match[0]) as ClassificationResult
+    const parsed = JSON.parse(match[0]) as ClassificationResult
+    // The model occasionally emits null subtopic/concept despite the prompt;
+    // progress_events requires both, so treat that as "no classification"
+    if (typeof parsed.subtopic !== 'string' || !parsed.subtopic.trim()
+     || typeof parsed.concept  !== 'string' || !parsed.concept.trim()) {
+      console.warn('[classify] missing subtopic/concept — skipping progress event')
+      return null
+    }
+    return parsed
   } catch (err) {
     console.error('[classify] failed:', err)
     return null
@@ -191,11 +229,44 @@ function chunkText(text: string, maxChars = 1000): string[] {
 const uploadsDir = path.join(process.cwd(), 'uploads')
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024  // 25 MB
+
 const storage = multer.diskStorage({
   destination: uploadsDir,
-  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+
+  filename: (_req, _file, cb) => cb(null, `${Date.now()}-${randomUUID()}.pdf`),
 })
-const upload = multer({ storage, limits: { fileSize: 1024 * 1024 * 1024 } })
+
+
+function pdfOnlyFilter(
+  _req: express.Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback,
+) {
+  const isPdf =
+    file.mimetype === 'application/pdf' ||
+    file.originalname.toLowerCase().endsWith('.pdf')
+  if (isPdf) cb(null, true)
+  else cb(new Error('Only PDF files are allowed'))
+}
+
+const upload = multer({
+  storage,
+  fileFilter: pdfOnlyFilter,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+})
+
+
+function uploadSingle(req: express.Request, res: express.Response, next: express.NextFunction) {
+  upload.single('file')(req, res, (err: unknown) => {
+    if (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed'
+      res.status(400).json({ error: msg })
+      return
+    }
+    next()
+  })
+}
 
 function pdfPageCount(buf: Buffer): number {
   const text = buf.toString('latin1')
@@ -237,18 +308,22 @@ app.get('/api/documents', async (req, res) => {
   }
 })
 
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/api/upload', uploadLimiter, uploadSingle, async (req, res) => {
   try {
     const file = req.file
     if (!file) { res.status(400).json({ error: 'No file provided' }); return }
 
     const subject = (req.body.topic as string)?.trim()
-    if (!subject) { res.status(400).json({ error: 'topic is required' }); return }
+    if (!subject) { fs.unlinkSync(file.path); res.status(400).json({ error: 'topic is required' }); return }
+
+    const buffer = fs.readFileSync(file.path)
+    if (buffer.subarray(0, 5).toString('latin1') !== '%PDF-') {
+      fs.unlinkSync(file.path)
+      res.status(400).json({ error: 'File content is not a valid PDF' }); return
+    }
 
     let pages = 0
-    if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
-      try { pages = pdfPageCount(fs.readFileSync(file.path)) } catch { /* leave as 0 */ }
-    }
+    try { pages = pdfPageCount(buffer) } catch { /* leave as 0 */ }
 
     const { rows } = await pool.query(
       `INSERT INTO documents (name, file_path, subject, pages, status)
@@ -323,7 +398,6 @@ app.post('/api/injest', async (req, res) => {
     const embeddings = await embedBatch(rawChunks.map(c => c.textWithMeta))
     rawChunks.forEach((c, i) => { c.embedding = embeddings[i] })
 
-    // Batch insert chunks in a transaction
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -360,7 +434,6 @@ app.post('/api/injest', async (req, res) => {
       client.release()
     }
 
-    // Extract canonical subtopics from document text (best-effort, non-blocking)
     try {
       const textSample = pageTexts.slice(0, 4).join('\n').slice(0, 3000)
       const subRes = await anthropic.messages.create({
@@ -394,14 +467,148 @@ app.post('/api/injest', async (req, res) => {
   }
 })
 
-app.get('/api/messages', async (req, res) => {
+// ── Conversations ─────────────────────────────────────────────
+
+app.get('/api/conversations', async (req, res) => {
   try {
     const { topic } = req.query
     if (!topic || typeof topic !== 'string') {
       res.status(400).json({ error: 'topic is required' }); return
     }
     const { rows } = await pool.query(
-      `SELECT id::text, role, content FROM messages
+      `SELECT id::text, subject, title, created_at AS "createdAt",
+              excluded_doc_ids::text[] AS "excludedDocIds"
+       FROM conversations WHERE subject = $1 ORDER BY created_at DESC`,
+      [topic]
+    )
+    res.json({ conversations: rows })
+  } catch (err) {
+    console.error('GET /api/conversations error:', err)
+    res.status(500).json({ error: 'Failed to fetch conversations' })
+  }
+})
+
+app.post('/api/conversations', async (req, res) => {
+  try {
+    const topic = (req.body.topic as string)?.trim()
+    if (!topic) { res.status(400).json({ error: 'topic is required' }); return }
+    const excluded = Array.isArray(req.body.excludedDocIds)
+      ? (req.body.excludedDocIds as string[]).filter(id => /^\d+$/.test(String(id)))
+      : []
+    const { rows } = await pool.query(
+      `INSERT INTO conversations (subject, excluded_doc_ids) VALUES ($1, $2::bigint[])
+       RETURNING id::text, subject, title, created_at AS "createdAt",
+                 excluded_doc_ids::text[] AS "excludedDocIds"`,
+      [topic, excluded]
+    )
+    res.json({ conversation: rows[0] })
+  } catch (err) {
+    console.error('POST /api/conversations error:', err)
+    res.status(500).json({ error: 'Failed to create conversation' })
+  }
+})
+
+app.patch('/api/conversations/:id', async (req, res) => {
+  try {
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : null
+    const excluded = Array.isArray(req.body.excludedDocIds)
+      ? (req.body.excludedDocIds as string[]).filter(id => /^\d+$/.test(String(id)))
+      : null
+    if (!title && !excluded) {
+      res.status(400).json({ error: 'title or excludedDocIds is required' }); return
+    }
+    const { rows } = await pool.query(
+      `UPDATE conversations SET
+         title            = COALESCE($1, title),
+         excluded_doc_ids = COALESCE($2::bigint[], excluded_doc_ids)
+       WHERE id = $3
+       RETURNING id::text, subject, title, created_at AS "createdAt",
+                 excluded_doc_ids::text[] AS "excludedDocIds"`,
+      [title || null, excluded, req.params.id]
+    )
+    if (rows.length === 0) { res.status(404).json({ error: 'Conversation not found' }); return }
+    res.json({ conversation: rows[0] })
+  } catch (err) {
+    console.error('PATCH /api/conversations/:id error:', err)
+    res.status(500).json({ error: 'Failed to update conversation' })
+  }
+})
+
+app.delete('/api/conversations/:id', async (req, res) => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      `DELETE FROM progress_events
+       WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = $1)`,
+      [req.params.id]
+    )
+    await client.query(`DELETE FROM messages WHERE conversation_id = $1`, [req.params.id])
+    const { rowCount } = await client.query(
+      `DELETE FROM conversations WHERE id = $1`, [req.params.id]
+    )
+    await client.query('COMMIT')
+    if (!rowCount) { res.status(404).json({ error: 'Conversation not found' }); return }
+    res.json({ ok: true })
+  } catch (err) {
+    await client.query('ROLLBACK')
+    console.error('DELETE /api/conversations/:id error:', err)
+    res.status(500).json({ error: 'Failed to delete conversation' })
+  } finally {
+    client.release()
+  }
+})
+
+// Topics are derived from documents.subject — deleting one removes everything
+// recorded under that subject: documents, chunks, chats, messages, progress
+app.delete('/api/topics/:name', async (req, res) => {
+  const subject = req.params.name
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows: files } = await client.query<{ file_path: string }>(
+      `SELECT file_path FROM documents WHERE subject = $1`, [subject]
+    )
+    await client.query(`DELETE FROM progress_events    WHERE subject = $1`, [subject])
+    await client.query(`DELETE FROM messages           WHERE subject = $1`, [subject])
+    await client.query(`DELETE FROM conversations      WHERE subject = $1`, [subject])
+    await client.query(`DELETE FROM document_subtopics WHERE subject = $1`, [subject])
+    await client.query(`DELETE FROM chunks             WHERE subject = $1`, [subject])
+    await client.query(`DELETE FROM documents          WHERE subject = $1`, [subject])
+    await client.query('COMMIT')
+
+    // Best-effort file removal — the DB is already consistent
+    for (const f of files) {
+      try { fs.unlinkSync(f.file_path) } catch { /* file may already be gone */ }
+    }
+
+    res.json({ ok: true })
+  } catch (err) {
+    await client.query('ROLLBACK')
+    console.error('DELETE /api/topics/:name error:', err)
+    res.status(500).json({ error: 'Failed to delete topic' })
+  } finally {
+    client.release()
+  }
+})
+
+app.get('/api/messages', async (req, res) => {
+  try {
+    const { topic, conversation_id } = req.query
+    if (conversation_id && typeof conversation_id === 'string') {
+      const { rows } = await pool.query(
+        `SELECT id::text, role, content, feedback, citations FROM messages
+         WHERE conversation_id = $1 ORDER BY created_at ASC`,
+        [conversation_id]
+      )
+      res.json({ messages: rows })
+      return
+    }
+    if (!topic || typeof topic !== 'string') {
+      res.status(400).json({ error: 'topic or conversation_id is required' }); return
+    }
+    const { rows } = await pool.query(
+      `SELECT id::text, role, content, feedback, citations FROM messages
        WHERE subject = $1 ORDER BY created_at ASC`,
       [topic]
     )
@@ -412,11 +619,122 @@ app.get('/api/messages', async (req, res) => {
   }
 })
 
-app.post('/api/chat', async (req, res) => {
-  const { message, topic } = req.body as { message: string; topic: string }
+app.patch('/api/messages/:id/feedback', async (req, res) => {
+  try {
+    const { feedback } = req.body as { feedback: 'positive' | 'negative' }
+    if (feedback !== 'positive' && feedback !== 'negative') {
+      res.status(400).json({ error: 'feedback must be positive or negative' }); return
+    }
+    await pool.query(`UPDATE messages SET feedback = $1 WHERE id = $2`, [feedback, req.params.id])
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('PATCH /api/messages/:id/feedback error:', err)
+    res.status(500).json({ error: 'Failed to save feedback' })
+  }
+})
 
-  if (!message || !topic) {
+app.patch('/api/documents/:id', async (req, res) => {
+  const client = await pool.connect()
+  try {
+    let name = (req.body.name as string)?.trim()
+    if (!name) { res.status(400).json({ error: 'name is required' }); return }
+    if (!/\.pdf$/i.test(name)) name += '.pdf'
+
+    await client.query('BEGIN')
+    const { rows: oldRows } = await client.query<{ name: string; subject: string }>(
+      `SELECT name, subject FROM documents WHERE id = $1`, [req.params.id]
+    )
+    if (oldRows.length === 0) {
+      await client.query('ROLLBACK')
+      res.status(404).json({ error: 'Document not found' }); return
+    }
+    const { name: oldName, subject } = oldRows[0]
+
+    const { rows } = await client.query(
+      `UPDATE documents SET name = $1 WHERE id = $2
+       RETURNING id::text, name, subject, pages,
+                 uploaded_at AS "uploadedAt", status, ingested AS "injested"`,
+      [name, req.params.id]
+    )
+
+    // Keep retrieval metadata in sync so new citations carry the new name
+    await client.query(
+      `UPDATE chunks SET filename = $1 WHERE doc_id = $2`,
+      [name, req.params.id]
+    )
+
+    // Rewrite already-persisted citation JSON so old answers show the new name too
+    await client.query(
+      `UPDATE messages SET citations = (
+         SELECT jsonb_agg(
+           CASE WHEN elem->>'filename' = $1
+                THEN jsonb_set(elem, '{filename}', to_jsonb($2::text))
+                ELSE elem END)
+         FROM jsonb_array_elements(citations) elem)
+       WHERE subject = $3
+         AND citations IS NOT NULL
+         AND jsonb_typeof(citations) = 'array'
+         AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements(citations) e
+           WHERE e->>'filename' = $1)`,
+      [oldName, name, subject]
+    )
+
+    await client.query('COMMIT')
+    res.json({ document: rows[0] })
+  } catch (err) {
+    await client.query('ROLLBACK')
+    console.error('PATCH /api/documents/:id error:', err)
+    res.status(500).json({ error: 'Failed to rename document' })
+  } finally {
+    client.release()
+  }
+})
+
+app.delete('/api/documents/:id', async (req, res) => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query<{ file_path: string }>(
+      `SELECT file_path FROM documents WHERE id = $1`, [req.params.id]
+    )
+    if (rows.length === 0) {
+      await client.query('ROLLBACK')
+      res.status(404).json({ error: 'Document not found' }); return
+    }
+    await client.query(`DELETE FROM chunks WHERE doc_id = $1`, [req.params.id])
+    await client.query(`DELETE FROM document_subtopics WHERE doc_id = $1`, [req.params.id])
+    await client.query(
+      `UPDATE conversations SET excluded_doc_ids = array_remove(excluded_doc_ids, $1::bigint)
+       WHERE $1::bigint = ANY(excluded_doc_ids)`,
+      [req.params.id]
+    )
+    await client.query(`DELETE FROM documents WHERE id = $1`, [req.params.id])
+    await client.query('COMMIT')
+
+    // Best-effort file removal — the DB is already consistent
+    try { fs.unlinkSync(rows[0].file_path) } catch { /* file may already be gone */ }
+
+    res.json({ ok: true })
+  } catch (err) {
+    await client.query('ROLLBACK')
+    console.error('DELETE /api/documents/:id error:', err)
+    res.status(500).json({ error: 'Failed to delete document' })
+  } finally {
+    client.release()
+  }
+})
+
+app.post('/api/chat', chatLimiter, async (req, res) => {
+  const { message, topic, conversation_id } = req.body as {
+    message: string; topic: string; conversation_id?: string
+  }
+
+  if (!message || !topic || typeof message !== 'string' || typeof topic !== 'string') {
     res.status(400).json({ error: 'message and topic are required' }); return
+  }
+  if (message.length > MAX_MESSAGE_LEN) {
+    res.status(413).json({ error: `Message too long (max ${MAX_MESSAGE_LEN} characters)` }); return
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -425,13 +743,19 @@ app.post('/api/chat', async (req, res) => {
   res.flushHeaders()
 
   try {
-    // Load last 8 messages for topic context (oldest first for Claude)
+    // Load last 8 messages for context (oldest first for Claude) —
+    // scoped to the conversation when provided, else the whole topic
     const { rows: historyRows } = await pool.query<{ role: string; content: string }>(
-      `SELECT role, content FROM (
-         SELECT role, content, created_at FROM messages
-         WHERE subject = $1 ORDER BY created_at DESC LIMIT 8
-       ) sub ORDER BY created_at ASC`,
-      [topic]
+      conversation_id
+        ? `SELECT role, content FROM (
+             SELECT role, content, created_at FROM messages
+             WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 8
+           ) sub ORDER BY created_at ASC`
+        : `SELECT role, content FROM (
+             SELECT role, content, created_at FROM messages
+             WHERE subject = $1 ORDER BY created_at DESC LIMIT 8
+           ) sub ORDER BY created_at ASC`,
+      [conversation_id ?? topic]
     )
     const history = historyRows.map(r => ({
       role: r.role as 'user' | 'assistant',
@@ -440,8 +764,8 @@ app.post('/api/chat', async (req, res) => {
 
     // Persist user message before calling Claude
     const { rows: msgRows } = await pool.query<{ id: number }>(
-      `INSERT INTO messages (subject, role, content) VALUES ($1, 'user', $2) RETURNING id`,
-      [topic, message]
+      `INSERT INTO messages (subject, role, content, conversation_id) VALUES ($1, 'user', $2, $3) RETURNING id`,
+      [topic, message, conversation_id ?? null]
     )
     const messageId = msgRows[0].id
 
@@ -455,7 +779,17 @@ app.post('/api/chat', async (req, res) => {
     // Start classification concurrently — will be awaited after streaming
     const classificationPromise = classifyMessage(topic, message, history, existingSubtopics)
 
-    const topChunks = await retrieveTopChunks(message, topic)
+    // Per-chat scope: skip retrieval from docs the user muted for this conversation
+    let excludedDocIds: string[] = []
+    if (conversation_id) {
+      const { rows: convRows } = await pool.query<{ excluded: string[] }>(
+        `SELECT excluded_doc_ids::text[] AS excluded FROM conversations WHERE id = $1`,
+        [conversation_id]
+      )
+      excludedDocIds = convRows[0]?.excluded ?? []
+    }
+
+    const topChunks = await retrieveTopChunks(message, topic, excludedDocIds)
 
     const systemPrompt = topChunks.length === 0
       ? SYSTEM_PROMPT
@@ -479,32 +813,72 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // Strip SOURCES_JSON before saving
+    // Strip SOURCES_JSON before saving; keep the parsed citations for persistence
     const markerIdx    = fullResponse.lastIndexOf('SOURCES_JSON:')
     const savedContent = markerIdx !== -1 ? fullResponse.slice(0, markerIdx).trim() : fullResponse
 
-    // Classification is almost certainly done by now; await to get subtopic for both rows
-    const classification = await classificationPromise
-
-    const { rows: assistantRows } = await pool.query<{ id: number }>(
-      `INSERT INTO messages (subject, role, content, subtopic) VALUES ($1, 'assistant', $2, $3) RETURNING id`,
-      [topic, savedContent, classification?.subtopic ?? null]
-    )
-
-    if (classification) {
-      await Promise.all([
-        pool.query(
-          `UPDATE messages SET subtopic = $1 WHERE id = $2`,
-          [classification.subtopic, messageId]
-        ),
-        pool.query(
-          `INSERT INTO progress_events (message_id, subject, subtopic, concept, question_type, cognitive_level, confidence_signal)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [messageId, topic, classification.subtopic, classification.concept, classification.questionType, classification.cognitiveLevel ?? null, classification.confidenceSignal]
-        ),
-      ])
+    let citations: unknown = null
+    if (markerIdx !== -1) {
+      try {
+        citations = JSON.parse(fullResponse.slice(markerIdx + 'SOURCES_JSON:'.length).trim())
+      } catch { /* malformed — skip persistence, client parse will also fail */ }
     }
 
+    // Classification is almost certainly done by now; await to get subtopic for both rows.
+    // Everything below already streamed to the client — persistence failures must
+    // log and degrade, never convert a delivered answer into [ERROR].
+    const classification = await classificationPromise
+
+    let realAssistantId: number | null = null
+    try {
+      const { rows: assistantRows } = await pool.query<{ id: number }>(
+        `INSERT INTO messages (subject, role, content, subtopic, conversation_id, citations)
+         VALUES ($1, 'assistant', $2, $3, $4, $5) RETURNING id`,
+        [topic, savedContent, classification?.subtopic ?? null, conversation_id ?? null,
+         citations ? JSON.stringify(citations) : null]
+      )
+      realAssistantId = assistantRows[0].id
+    } catch (err) {
+      console.error('[chat] assistant message persist failed:', err)
+    }
+
+    if (classification) {
+      try {
+        await Promise.all([
+          pool.query(
+            `UPDATE messages SET subtopic = $1 WHERE id = $2`,
+            [classification.subtopic, messageId]
+          ),
+          pool.query(
+            `INSERT INTO progress_events (message_id, subject, subtopic, concept, question_type, cognitive_level, confidence_signal)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [messageId, topic, classification.subtopic, classification.concept, classification.questionType, classification.cognitiveLevel ?? null, classification.confidenceSignal]
+          ),
+        ])
+      } catch (err) {
+        console.error('[chat] progress event persist failed:', err)
+      }
+    }
+
+    // Auto-title the conversation from the first prompt's classified subtopic
+    if (conversation_id) {
+      const fallback = message.slice(0, 40) + (message.length > 40 ? '…' : '')
+      const title    = classification?.subtopic?.trim() || fallback
+      try {
+        const { rows: titleRows } = await pool.query<{ title: string }>(
+          `UPDATE conversations SET title = $1 WHERE id = $2 AND title = 'New Chat' RETURNING title`,
+          [title, conversation_id]
+        )
+        if (titleRows.length > 0) {
+          res.write(`data: [TITLE]${JSON.stringify(titleRows[0].title)}\n\n`)
+        }
+      } catch (err) {
+        console.error('[chat] conversation title update failed:', err)
+      }
+    }
+
+    // Send real DB id of the assistant message so the client can attach feedback
+    if (realAssistantId != null) res.write(`data: [ID]${realAssistantId}\n\n`)
     res.write('data: [DONE]\n\n')
     res.end()
   } catch (err) {

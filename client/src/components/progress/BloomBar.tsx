@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { BloomLevel } from '../../types'
 
 interface Props {
@@ -9,21 +10,21 @@ interface Props {
 const LEVELS: BloomLevel[] = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create']
 
 const BLOOM_BG: Record<BloomLevel, string> = {
-  remember:  '#252525',
-  understand: '#2e2e3e',
-  apply:     'rgba(110,231,183,0.28)',
-  analyze:   'rgba(110,231,183,0.50)',
-  evaluate:  'rgba(110,231,183,0.72)',
-  create:    '#6EE7B7',
+  remember:  '#E8E6E0',
+  understand: '#D8D5CD',
+  apply:     '#6EE7B7',
+  analyze:   '#34D399',
+  evaluate:  '#10B981',
+  create:    '#059669',
 }
 
 const BLOOM_TEXT: Record<BloomLevel, string> = {
-  remember:  '#444',
-  understand: '#555',
-  apply:     'rgba(110,231,183,0.55)',
-  analyze:   'rgba(110,231,183,0.72)',
-  evaluate:  'rgba(110,231,183,0.88)',
-  create:    '#6EE7B7',
+  remember:  '#9B9892',
+  understand: '#6B6B6B',
+  apply:     'rgba(5,150,105,0.6)',
+  analyze:   'rgba(5,150,105,0.75)',
+  evaluate:  'rgba(5,150,105,0.9)',
+  create:    '#047857',
 }
 
 export default function BloomBar({ distribution, topic }: Props) {
@@ -74,10 +75,13 @@ export default function BloomBar({ distribution, topic }: Props) {
             ))}
           </div>
 
-          {tooltip && (
+          {/* Portaled to <body>: backdrop-filter on the section breaks
+              position:fixed coordinates for descendants */}
+          {tooltip && createPortal(
             <div className="bloom-tooltip" style={{ left: tooltip.x, top: tooltip.y - 38 }}>
               {tooltip.text}
-            </div>
+            </div>,
+            document.body,
           )}
         </>
       )}

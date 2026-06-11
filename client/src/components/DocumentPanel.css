@@ -1,10 +1,10 @@
 /* ── Document Panel ──────────────────────────────── */
 .doc-panel {
-  width: 380px;
+  width: 360px;
   min-width: 280px;
   max-width: 420px;
-  background: #171717;
-  border-right: 1px solid rgba(255,255,255,0.06);
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -12,45 +12,40 @@
 
 /* Panel header */
 .doc-panel-header {
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 18px 20px 6px;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   flex-shrink: 0;
 }
 
 .doc-panel-title {
-  font-size: 17px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.3;
-  color: #f5f5f5;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .doc-count-badge {
   font-size: 12px;
-  font-weight: 500;
-  color: #888888;
-  background: #1c1c1c;
-  border: 1px solid rgba(255,255,255,0.12);
-  padding: 3px 10px;
-  border-radius: 99px;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 /* Topic row */
 .doc-topic-row {
-  padding: 10px 16px;
+  padding: 8px 20px 14px;
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
 
 .doc-topic-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -64,27 +59,26 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px 4px 12px;
-  border-radius: 99px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.03);
-  color: #aaaaaa;
-  font-size: 12px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background 0.15s ease-in-out, border-color 0.15s ease-in-out, color 0.15s ease-in-out;
   white-space: nowrap;
 }
 
 .topic-trigger:hover {
-  border-color: rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.06);
-  color: #f5f5f5;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .topic-trigger.open {
-  border-color: rgba(110,231,183,0.5);
-  color: #6EE7B7;
-  background: rgba(110,231,183,0.06);
+  border-color: rgba(52, 211, 153, 0.5);
+  color: var(--accent-text);
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .topic-trigger-label {
@@ -93,7 +87,7 @@
 
 .topic-chevron {
   color: currentColor;
-  transition: transform 0.18s ease;
+  transition: transform 0.18s ease-in-out;
   flex-shrink: 0;
 }
 
@@ -101,17 +95,24 @@
   transform: rotate(180deg);
 }
 
+@keyframes dropdown-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-3px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
 .topic-dropdown {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  min-width: 180px;
-  background: #1e1e1e;
-  border: 1px solid rgba(255,255,255,0.1);
+  min-width: 190px;
+  background: #FFFFFF;
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 4px;
   z-index: 200;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  transform-origin: top left;
+  animation: dropdown-in 0.12s ease-in-out both;
 }
 
 .topic-dropdown-item {
@@ -123,21 +124,21 @@
   border-radius: 7px;
   border: none;
   background: none;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  color: #aaaaaa;
+  color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s ease-in-out, color 0.12s ease-in-out;
 }
 
 .topic-dropdown-item:hover {
-  background: rgba(255,255,255,0.05);
-  color: #f5f5f5;
+  background: rgba(26, 26, 26, 0.04);
+  color: var(--text-primary);
 }
 
 .topic-dropdown-item.active {
-  color: #6EE7B7;
+  color: var(--accent-text);
 }
 
 .topic-check {
@@ -151,17 +152,17 @@
 
 .topic-dropdown-divider {
   height: 1px;
-  background: rgba(255,255,255,0.06);
+  background: var(--line);
   margin: 4px 0;
 }
 
 .topic-dropdown-add {
-  color: #555555;
+  color: var(--text-muted);
 }
 
 .topic-dropdown-add:hover {
-  color: #aaaaaa;
-  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  background: rgba(26, 26, 26, 0.03);
 }
 
 /* New topic inline input (inside dropdown) */
@@ -174,10 +175,10 @@
 
 .topic-new-input {
   flex: 1;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(110,231,183,0.4);
+  background: rgba(26, 26, 26, 0.03);
+  border: 1px solid rgba(52, 211, 153, 0.5);
   border-radius: 6px;
-  color: #f5f5f5;
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
   padding: 4px 8px;
@@ -193,109 +194,137 @@
   padding: 3px 5px;
   border-radius: 4px;
   line-height: 1;
-  transition: color 0.15s;
+  transition: color 0.15s ease-in-out;
   flex-shrink: 0;
 }
 
-.topic-new-confirm { color: #6EE7B7; }
-.topic-new-confirm:hover:not(:disabled) { color: #3ecf8e; }
+.topic-new-confirm { color: var(--accent-deep); }
+.topic-new-confirm:hover:not(:disabled) { color: var(--accent-text); }
 .topic-new-confirm:disabled { opacity: 0.35; cursor: default; }
-.topic-new-cancel  { color: #555555; }
-.topic-new-cancel:hover  { color: #888888; }
+.topic-new-cancel  { color: var(--text-muted); }
+.topic-new-cancel:hover  { color: var(--text-secondary); }
 
-/* Upload zone */
+/* Upload zone — quiet until you reach for it */
 .upload-zone {
   position: relative;
-  margin: 14px 16px 4px;
-  padding: 22px;
+  margin: 0 20px 6px;
+  padding: 18px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
-  background: #1c1c1c;
-  border-radius: 8px;
+  background: transparent;
+  border: 1px dashed rgba(26, 26, 26, 0.16);
+  border-radius: 10px;
   flex-shrink: 0;
-  transition: background 0.2s ease;
+  transition: background 0.2s ease-in-out, border-color 0.2s ease-in-out;
 }
 
-.upload-zone::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 8px;
-  border: 1.5px dashed rgba(110, 231, 183, 0.15);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  pointer-events: none;
-}
-
-.upload-zone:hover::before {
-  border-color: rgba(110, 231, 183, 0.32);
-  box-shadow: 0 0 24px rgba(110, 231, 183, 0.05);
-}
-
-.upload-zone.drag-over::before {
-  border-color: rgba(110, 231, 183, 0.6);
-  box-shadow: 0 0 32px rgba(110, 231, 183, 0.1);
+.upload-zone:hover {
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(26, 26, 26, 0.26);
 }
 
 .upload-zone.drag-over {
-  background: rgba(110, 231, 183, 0.04);
+  background: rgba(52, 211, 153, 0.08);
+  border-color: transparent; /* the marching-ants SVG takes over */
+}
+
+/* Marching ants — slow dash loop around the drop zone on drag-over.
+   (linear by necessity: a continuous loop stutters with easing) */
+.upload-ants {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.upload-ants rect {
+  x: 1px;
+  y: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  rx: 9px;
+  fill: none;
+  stroke: rgba(5, 150, 105, 0.6);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+}
+
+@keyframes ants-march {
+  to { stroke-dashoffset: -22; }
+}
+
+.upload-zone.drag-over .upload-ants {
+  opacity: 1;
+}
+
+.upload-zone.drag-over .upload-ants rect {
+  animation: ants-march 2.4s linear infinite;
 }
 
 .upload-icon-wrap {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+/* Gentle float while a file is processing — stops the moment it's done */
+@keyframes icon-float {
+  0%, 100% { transform: translateY(0);    }
+  50%      { transform: translateY(-4px); }
+}
+
+.upload-icon-wrap.floating {
+  animation: icon-float 1.2s ease-in-out infinite;
 }
 
 .upload-zone.drag-over .upload-icon-wrap {
-  background: rgba(110, 231, 183, 0.1);
-  border-color: rgba(110, 231, 183, 0.3);
-  transform: scale(1.08);
+  background: rgba(52, 211, 153, 0.16);
+  transform: scale(1.06);
 }
 
 .upload-label {
   font-size: 12px;
   font-weight: 500;
-  color: #888888;
-  transition: color 0.2s ease;
+  color: var(--text-secondary);
+  transition: color 0.2s ease-in-out;
   text-align: center;
 }
 
 .upload-zone.drag-over .upload-label {
-  color: #6EE7B7;
+  color: var(--accent-text);
 }
 
 .upload-hint {
   font-size: 11px;
-  color: #555555;
+  color: var(--text-muted);
   margin-top: 2px;
   text-align: center;
 }
 
 .upload-hint-warn {
-  color: #f5a623;
+  color: #B45309;
 }
 
 .upload-zone-disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
-.upload-zone-disabled::before {
-  border-color: rgba(255, 255, 255, 0.06) !important;
-}
-
-.upload-zone-disabled:hover::before {
-  border-color: rgba(255, 255, 255, 0.06) !important;
-  box-shadow: none !important;
+.upload-zone-disabled:hover {
+  background: transparent;
+  border-color: rgba(26, 26, 26, 0.16);
 }
 
 .upload-ext-row {
@@ -308,72 +337,263 @@
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 4px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: #555555;
+  background: rgba(26, 26, 26, 0.05);
+  color: var(--text-muted);
 }
 
 /* File list section */
 .doc-files-section {
   flex: 1;
   overflow-y: auto;
-  padding: 0 16px 16px;
+  padding: 0 12px 16px;
 }
 
 .doc-files-label {
   font-size: 11px;
   font-weight: 600;
-  color: #555555;
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  padding-top: 16px;
-  padding-bottom: 10px;
+  padding: 16px 8px 8px;
+}
+
+.doc-files-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.files-muted-hint {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 16px 8px 8px 0;
+  white-space: nowrap;
 }
 
 .file-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
-/* File card */
+/* File card — quiet row, lifts to white on hover */
 .file-card {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.06);
-  background: #1c1c1c;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: transparent;
   cursor: pointer;
   overflow: hidden;
-  transition: all 0.25s ease;
+  transition: background 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
 .file-card:hover {
-  border-color: rgba(255,255,255,0.12);
-  background: #212121;
-}
-
-.file-card.ready {
-  border-left: 3px solid #6EE7B7;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
 .file-card.just-done {
-  border-color: rgba(62, 207, 142, 0.3);
-  background: rgba(62, 207, 142, 0.05);
+  background: rgba(52, 211, 153, 0.1);
 }
 
 .file-card.processing {
   opacity: 0.65;
 }
 
+/* Muted for the active chat — present but out of retrieval scope */
+.file-card-muted {
+  opacity: 0.5;
+}
+
+.file-card-muted:hover {
+  opacity: 0.85;
+}
+
+.file-card-muted .ext-badge {
+  filter: grayscale(1);
+}
+
+/* Right-side control cluster: status badge gives way to icons on hover */
+.file-side {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 54px;
+  flex-shrink: 0;
+}
+
+.file-side .status-badge {
+  transition: opacity 0.12s ease-in-out;
+}
+
+.file-card:hover .file-side .status-badge {
+  /* visibility beats the badge-in animation's persistent opacity:1 fill */
+  opacity: 0;
+  visibility: hidden;
+}
+
+.file-controls {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-in-out;
+}
+
+.file-card:hover .file-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.file-ctrl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease-in-out, color 0.12s ease-in-out;
+}
+
+.file-ctrl:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+
+/* Eye-off state — mint to signal it's a deliberate per-chat setting */
+.file-ctrl-on {
+  color: var(--accent-text);
+}
+
+.file-ctrl-on:hover {
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--accent-text);
+}
+
+.file-ctrl-delete:hover {
+  background: rgba(185, 28, 28, 0.08);
+  color: #B91C1C;
+}
+
+/* ── Delete confirmation dialog (portaled to body) ──────────── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 28, 24, 0.32);
+  backdrop-filter: blur(3px);
+  animation: confirm-fade 0.15s ease-out both;
+}
+
+.confirm-card {
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px 22px 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  animation: confirm-pop 0.18s ease-out both;
+}
+
+@keyframes confirm-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes confirm-pop {
+  from { opacity: 0; transform: scale(0.95) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-overlay, .confirm-card { animation: none; }
+}
+
+.confirm-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+.confirm-msg {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+  word-break: break-word;
+}
+
+.confirm-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s ease-in-out, transform 0.12s ease-in-out;
+}
+
+.confirm-btn:active {
+  transform: scale(0.97);
+}
+
+.confirm-btn-cancel {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-secondary);
+}
+
+.confirm-btn-cancel:hover {
+  background: rgba(0, 0, 0, 0.09);
+  color: var(--text-primary);
+}
+
+.confirm-btn-delete {
+  background: #B91C1C;
+  color: #FFFFFF;
+}
+
+.confirm-btn-delete:hover {
+  background: #991B1B;
+}
+
 /* Ext badge */
 .ext-badge {
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -381,26 +601,22 @@
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  border: 1px solid;
   flex-shrink: 0;
 }
 
 .ext-badge-pdf {
-  color: rgba(190, 130, 130, 0.8);
-  border-color: rgba(150, 80, 80, 0.18);
-  background: rgba(120, 50, 50, 0.1);
+  color: #B91C1C;
+  background: rgba(185, 28, 28, 0.08);
 }
 
 .ext-badge-md {
-  color: rgba(110, 231, 183, 0.75);
-  border-color: rgba(110, 231, 183, 0.2);
-  background: rgba(110, 231, 183, 0.06);
+  color: var(--accent-text);
+  background: rgba(52, 211, 153, 0.12);
 }
 
 .ext-badge-default {
-  color: #555555;
-  border-color: rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  background: rgba(26, 26, 26, 0.05);
 }
 
 /* File info */
@@ -410,21 +626,20 @@
 }
 
 .file-name {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 400;
-  color: #f5f5f5;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .file-meta {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 400;
-  line-height: 1.6;
-  color: #555555;
-  margin-top: 2px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin-top: 1px;
 }
 
 /* Processing bar */
@@ -432,35 +647,43 @@
   margin-top: 6px;
   height: 2px;
   border-radius: 99px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(26, 26, 26, 0.08);
 }
 
-/* Status badges */
+/* Status badges — tinted text on tinted ground */
 .status-badge {
   font-size: 11px;
   font-weight: 500;
   padding: 2px 8px;
   border-radius: 99px;
-  border: 1px solid;
   flex-shrink: 0;
 }
 
+/* Ready badge scales in when the status flips */
+@keyframes badge-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: scale(1);   }
+}
+
 .status-ready {
-  background: rgba(62, 207, 142, 0.08);
-  border-color: rgba(62, 207, 142, 0.2);
-  color: #3ecf8e;
+  background: rgba(5, 150, 105, 0.1);
+  color: var(--accent-text);
+  animation: badge-in 0.15s ease-out both;
 }
 
 .status-processing {
-  background: rgba(245, 166, 35, 0.1);
-  border-color: rgba(245, 166, 35, 0.22);
-  color: #f5a623;
+  background: rgba(245, 166, 35, 0.16);
+  color: #B45309;
 }
 
 .status-failed {
-  background: rgba(240, 112, 112, 0.1);
-  border-color: rgba(240, 112, 112, 0.22);
-  color: rgba(240, 112, 112, 0.85);
+  background: rgba(185, 28, 28, 0.1);
+  color: #B91C1C;
+}
+
+.status-muted {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-muted);
 }
 
 /* Done check icon */
@@ -469,9 +692,234 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: rgba(62, 207, 142, 0.12);
-  border: 1px solid rgba(62, 207, 142, 0.3);
+  background: rgba(5, 150, 105, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
 }
+
+/* ── Inline file rename ─────────────────────────────────────── */
+.file-rename-input {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  outline: none;
+}
+
+/* ── Chats sheet — springy bottom drawer ────────────────────── */
+.chat-sheet {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  transition: height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: height;
+}
+
+.chat-sheet.dragging {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-sheet {
+    transition: height 0.2s ease-in-out;
+  }
+}
+
+.chat-handle {
+  flex-shrink: 0;
+  padding: 7px 12px 9px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.chat-handle:active {
+  cursor: grabbing;
+}
+
+.chat-grab-pill {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.13);
+  margin: 0 auto 5px;
+  transition: background 0.15s ease-in-out;
+}
+
+.chat-handle:hover .chat-grab-pill {
+  background: rgba(26, 26, 26, 0.28);
+}
+
+.chat-handle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-handle-label {
+  padding: 0 8px;
+}
+
+.chat-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease-in-out, background 0.15s ease-in-out;
+}
+
+.chat-new-btn:hover:not(:disabled) {
+  color: var(--accent-text);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.chat-new-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.chat-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 10px;
+}
+
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  flex-shrink: 0;
+  text-align: left;
+  padding: 5px 6px 5px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: background 0.15s ease-in-out, color 0.15s ease-in-out;
+}
+
+.chat-item:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text-primary);
+}
+
+.chat-item.active {
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.chat-item-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topic-item-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hover-reveal trash inside chat rows and topic dropdown rows */
+.row-del {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-in-out, background 0.12s ease-in-out, color 0.12s ease-in-out;
+}
+
+.chat-item:hover .row-del,
+.topic-dropdown-item:hover .row-del {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-rename-input {
+  width: 100%;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.chat-list-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 10px;
+}
+
+/* Scroll affordance — fade + chevron when more chats sit below the fold */
+.chat-scroll-hint {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  height: 32px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--text-muted);
+  background: linear-gradient(to bottom, rgba(236, 234, 228, 0), var(--sidebar) 75%);
+}
+
+.chat-scroll-hint svg {
+  animation: hint-bob 2s ease-in-out infinite;
+}
+
+@keyframes hint-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-scroll-hint svg {
+    animation: none;
+  }
+}
+

@@ -1,81 +1,98 @@
 /* ── TopBar ──────────────────────────────────────── */
 .topbar {
+  position: relative;
   display: flex;
   align-items: center;
-  height: 44px;
-  background: #171717;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  height: 50px;
+  padding: 0 20px;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
   user-select: none;
 }
 
 .topbar-logo {
-  padding: 0 20px;
-  border-right: 1px solid rgba(255,255,255,0.06);
-  height: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   flex-shrink: 0;
 }
 
 .topbar-logo-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(110, 231, 183, 0.1);
-  border: 1px solid rgba(110, 231, 183, 0.22);
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: rgba(52, 211, 153, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  color: #6EE7B7;
 }
 
 .topbar-logo-name {
-  font-size: 15px;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 17px;
   font-weight: 600;
-  color: #f5f5f5;
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
+/* Segmented control, centered in the bar */
 .topbar-nav {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  height: 100%;
   align-items: center;
-  padding: 0 8px;
+  padding: 3px;
+  border-radius: 9px;
+  background: rgba(26, 26, 26, 0.05);
+}
+
+.topbar-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: 106px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  transition: transform 0.18s ease-in-out;
+  pointer-events: none;
+}
+
+.topbar-nav[data-active='progress'] .topbar-thumb {
+  transform: translateX(106px);
 }
 
 .topbar-tab {
   position: relative;
-  padding: 0 16px;
-  height: 100%;
+  z-index: 1;
+  width: 106px;
+  height: 28px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   font-size: 13px;
   font-weight: 500;
-  color: #555555;
+  color: var(--text-secondary);
   background: transparent;
   border: none;
+  border-radius: 7px;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease-in-out;
 }
 
 .topbar-tab:hover {
-  color: #888888;
+  color: var(--text-primary);
 }
 
 .topbar-tab.active {
-  color: #f5f5f5;
+  color: var(--text-primary);
 }
 
-.topbar-tab-indicator {
-  position: absolute;
-  bottom: 0;
-  left: 12px;
-  right: 12px;
-  height: 2px;
-  background: #6EE7B7;
-  border-radius: 2px 2px 0 0;
+.topbar-tab.active svg {
+  color: var(--accent-deep);
 }

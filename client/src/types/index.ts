@@ -12,10 +12,12 @@ export interface ConceptActivity {
 
 export interface WeakSpot {
   subtopic: string
+  subject: string
   askCount: number
   confusionRate: number
   weaknessScore: number
   dominantCognitiveLevel: BloomLevel | null
+  status: 'active' | 'revisit'
 }
 
 export interface ProgressData {
@@ -49,6 +51,7 @@ export interface Citation {
   page: number
   chunk_index: number
   char_offset: number
+  content?: string
 }
 
 export interface Message {
@@ -58,4 +61,13 @@ export interface Message {
   citations?: Citation[]
   chunksRetrieved?: number
   isStreaming?: boolean
+  feedback?: 'positive' | 'negative' | null
+}
+
+export interface Conversation {
+  id: string
+  subject: string
+  title: string
+  createdAt: string
+  excludedDocIds: string[]
 }

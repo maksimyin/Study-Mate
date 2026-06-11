@@ -19,10 +19,12 @@ export interface ConceptActivity {
 
 export interface WeakSpot {
   subtopic: string
+  subject: string
   askCount: number
   confusionRate: number
   weaknessScore: number
   dominantCognitiveLevel: BloomLevel | null
+  status: 'active' | 'revisit'
 }
 
 export interface ProgressData {
@@ -89,39 +91,84 @@ export async function getProgressData(topic?: string): Promise<ProgressData> {
       p
     ),
     pool.query<{
-      subtopic: string; ask_count: string; confusion_rate: string
-      weakness_score: string; dominant_cognitive_level: string | null
+      subtopic: string; subject: string; ask_count: string; confusion_rate: string
+      weakness_score: string; dominant_cognitive_level: string | null; resolved: boolean
     }>(
-      `WITH cs AS (
+      `WITH signals AS (
+         -- Inferred signal: Haiku confidence classification on every ask (weight 1)
          SELECT
            LOWER(TRIM(subtopic)) AS subtopic,
-           COUNT(*) AS ask_count,
-           MODE() WITHIN GROUP (ORDER BY cognitive_level NULLS LAST) AS dominant_cognitive_level,
-           AVG(CASE WHEN confidence_signal = 'low' THEN 1.0 ELSE 0.0 END) AS confusion_rate,
+           subject,
+           cognitive_level,
+           created_at,
+           CASE WHEN confidence_signal = 'low' THEN 1.0 ELSE 0.0 END AS confusion,
+           1.0  AS weight,
+           TRUE AS is_event,
+           (confidence_signal = 'low') AS is_low_event,
+           FALSE AS is_negative_fb,
+           FALSE AS is_positive_fb
+         FROM progress_events
+         WHERE subtopic IS NOT NULL AND subtopic != '' ${sc}
+         UNION ALL
+         -- Explicit signal: user clicked got it / don't get it (weight 2)
+         SELECT
+           LOWER(TRIM(subtopic)) AS subtopic,
+           subject,
+           NULL AS cognitive_level,
+           created_at,
+           CASE WHEN feedback = 'negative' THEN 1.0 ELSE 0.0 END AS confusion,
+           2.0   AS weight,
+           FALSE AS is_event,
+           FALSE AS is_low_event,
+           (feedback = 'negative') AS is_negative_fb,
+           (feedback = 'positive') AS is_positive_fb
+         FROM messages
+         WHERE feedback IS NOT NULL AND subtopic IS NOT NULL AND subtopic != '' ${sc}
+       ),
+       cs AS (
+         SELECT
+           subtopic,
+           MODE() WITHIN GROUP (ORDER BY subject) AS subject,
+           COUNT(*) FILTER (WHERE is_event) AS ask_count,
+           MODE() WITHIN GROUP (ORDER BY cognitive_level NULLS LAST)
+             FILTER (WHERE cognitive_level IS NOT NULL) AS dominant_cognitive_level,
+           -- Recency-decayed blend (~2-week e-folding): recent signals dominate stale ones
+           SUM(confusion * weight * EXP(-EXTRACT(EPOCH FROM (NOW() - created_at)) / 1209600.0))
+             / NULLIF(SUM(weight * EXP(-EXTRACT(EPOCH FROM (NOW() - created_at)) / 1209600.0)), 0) AS confusion_rate,
            AVG(CASE cognitive_level
              WHEN 'remember'  THEN 1.0 WHEN 'understand' THEN 2.0
              WHEN 'apply'     THEN 3.0 WHEN 'analyze'    THEN 4.0
              WHEN 'evaluate'  THEN 5.0 WHEN 'create'     THEN 6.0
              ELSE NULL
-           END) AS avg_bloom
-         FROM progress_events
-         WHERE subtopic IS NOT NULL AND subtopic != '' ${sc}
-         GROUP BY LOWER(TRIM(subtopic))
-         HAVING COUNT(*) >= 3
+           END) AS avg_bloom,
+           MAX(created_at) FILTER (WHERE is_positive_fb) AS last_positive_at,
+           MAX(created_at) FILTER (WHERE is_negative_fb) AS last_negative_fb_at,
+           MAX(created_at) FILTER (WHERE is_low_event)   AS last_low_event_at
+         FROM signals
+         GROUP BY subtopic
+         HAVING COUNT(*) FILTER (WHERE is_event) >= 3
        )
-       SELECT subtopic, ask_count, confusion_rate, dominant_cognitive_level,
+       SELECT subtopic, subject, ask_count, confusion_rate, dominant_cognitive_level,
+         -- Breakthrough rule: an explicit "got it" resolves the spot.
+         -- An explicit "don't get it" after it reactivates immediately; an INFERRED
+         -- low-confidence signal only reactivates if it lands well after the click
+         -- (>5 min), so same-burst classification noise can't cancel a breakthrough.
+         (last_positive_at IS NOT NULL
+           AND (last_negative_fb_at IS NULL OR last_positive_at > last_negative_fb_at)
+           AND (last_low_event_at IS NULL
+                OR last_low_event_at < last_positive_at + INTERVAL '5 minutes')) AS resolved,
          CASE WHEN avg_bloom IS NOT NULL AND avg_bloom > 0
            THEN ask_count * confusion_rate * (1.0 / avg_bloom)
            ELSE ask_count * confusion_rate
          END AS weakness_score
        FROM cs
-       ORDER BY weakness_score DESC
+       ORDER BY resolved ASC, weakness_score DESC
        LIMIT 5`,
       p
     ),
     pool.query<{ day: string; count: string }>(
       `SELECT
-         DATE(created_at AT TIME ZONE 'UTC')::text AS day,
+         DATE(created_at)::text AS day,
          COUNT(*)::text AS count
        FROM progress_events
        WHERE created_at >= NOW() - INTERVAL '90 days' ${sc}
@@ -144,10 +191,12 @@ export async function getProgressData(topic?: string): Promise<ProgressData> {
 
   const weakSpots: WeakSpot[] = weakRows.rows.map(r => ({
     subtopic:                r.subtopic,
+    subject:                 r.subject,
     askCount:                parseInt(r.ask_count, 10),
     confusionRate:           parseFloat(r.confusion_rate),
     weaknessScore:           parseFloat(r.weakness_score),
     dominantCognitiveLevel:  r.dominant_cognitive_level as BloomLevel | null,
+    status:                  r.resolved ? 'revisit' : 'active',
   }))
 
   const avgBloomNum = parseFloat(avgRow.rows[0].avg_bloom ?? '2')
@@ -157,7 +206,7 @@ export async function getProgressData(topic?: string): Promise<ProgressData> {
     summary: {
       totalAsksThisWeek: parseInt(weekRow.rows[0].count, 10),
       totalEvents:       parseInt(totalRow.rows[0].count, 10),
-      weakSpotCount:     weakSpots.length,
+      weakSpotCount:     weakSpots.filter(s => s.status === 'active').length,
       avgCognitiveLevel: numToBloom(avgBloomNum),
     },
     topicActivity: activityRows.rows.map(r => ({
