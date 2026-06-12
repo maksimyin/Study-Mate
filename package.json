@@ -8,7 +8,8 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "tsx server/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
@@ -29,6 +30,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "tsx": "^4",
     "unpdf": "^1.6.2"
   },
   "devDependencies": {
@@ -44,7 +46,6 @@
     "concurrently": "^10.0.3",
     "postcss": "^8",
     "tailwindcss": "^3",
-    "tsx": "^4",
     "typescript": "^6.0.3",
     "vite": "^6"
   }
